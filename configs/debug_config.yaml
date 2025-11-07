@@ -1,0 +1,126 @@
+# Medium-Scale Validation Configuration
+# 中等规模验证配置 - 验证模型性能差异
+# 输出目录: /home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/naive_compare
+
+data:
+  dimension: 30  # 增加到30维
+  n_cells: 200   # 增加到200个细胞
+  n_time_points: 40  # 保持40个时间点
+  total_time: 2.0    # 保持调优好的时间范围
+  diffusion_coeff: 0.1
+  
+  initial_state:
+    sigma_init: 0.5  # 初始方差 - 低熵起点
+  
+  high_entropy_state:
+    effective_rank: 3
+    lambda_low: 1.0
+    lambda_high: 10.0  # 更强的各向异性，促进探索
+    lambda_small: 0.01
+    mu_peak_norm: 3.0  # 增加中心偏移，促进扩散
+  
+  final_state:
+    n_modes: 2
+    separation_distance: 3.0  # 适中的分离度
+    sigma_final: 0.5  # 最终方差应该接近初始值！
+    mode_weights: [0.5, 0.5]
+  
+  time_points:
+    t1: 0.25   # Phase 1结束（保持不变）
+    t_peak: 0.5  # 熵峰值时间（保持不变）
+    t2: 0.6    # Phase 3开始（保持不变），但现在有0.6-2.0的长时间收敛
+  
+  potential:
+    alpha_init: 0.05   # 极弱的Phase 2吸引子，避免干扰熵增
+    alpha_decay: 5.0   # 快速衰减到0
+    beta_init: 5.0     # 强约束Phase 1（低熵）
+    beta_decay: 5.0    # 快速释放约束→熵增加
+    gamma_init: 2.0    # Phase 3温和吸引子（配合高基线实现平缓下降）
+    gamma_growth: 0.0  # 不使用（已改用指数衰减）
+
+dataset:
+  train_size: 15  # 增加到15条轨迹
+  test_size: 5    # 增加到5条测试轨迹
+  
+  train_variation:
+    separation_distance: [2.5, 3.5]
+    lambda_high: [8.0, 12.0]  # 扩大变化范围
+    entropy_duration: [0.5, 0.7]
+  
+  test_extrapolation:
+    type: 'geometric'
+    geometric:
+      separation_distance: [4.0, 5.0]
+      lambda_high: [13.0, 15.0]  # 更强的外推
+
+models:
+  ot:
+    hidden_dims: [128, 128, 128]  # 增加容量和深度
+    activation: 'relu'
+    dropout: 0.1
+  
+  sb:
+    hidden_dims: [256, 256, 256]  # SB需要更大容量学习动力学
+    time_embedding_dim: 64         # 增加时间嵌入维度
+    activation: 'relu'
+    dropout: 0.1
+  
+  vae:
+    encoder_dims: [128, 64]  # 增加编码器容量
+    latent_dim: 32           # 增加潜空间维度
+    decoder_dims: [64, 128]  # 增加解码器容量
+    activation: 'relu'
+    dropout: 0.1
+    beta: 1.0
+
+training:
+  ot:
+    epochs: 50        # 增加到50轮
+    batch_size: 32    # 增加batch size
+    learning_rate: 0.001
+    optimizer: 'adam'
+    weight_decay: 0.0001
+    scheduler:
+      type: 'reduce_on_plateau'
+      patience: 10
+      factor: 0.5
+  
+  sb:
+    epochs: 100       # SB需要更多训练，增加到100轮
+    batch_size: 32
+    learning_rate: 0.0005
+    optimizer: 'adam'
+    weight_decay: 0.0001
+    scheduler:
+      type: 'cosine'
+      T_max: 100
+  
+  vae:
+    epochs: 80        # 增加到80轮
+    batch_size: 32
+    learning_rate: 0.001
+    optimizer: 'adam'
+    weight_decay: 0.0001
+    scheduler:
+      type: 'reduce_on_plateau'
+      patience: 10
+      factor: 0.5
+
+evaluation:
+  n_samples: 500     # 增加到500个样本以获得更准确的评估
+  metrics:
+    - 'boundary_fidelity'
+    - 'path_fidelity'
+    - 'entropy_evolution'
+    - 'geometric_structure'
+
+visualization:
+  pca_components: 3
+  dpi: 100
+  save_format: 'png'
+
+experiment:
+  seed: 42
+  device: 'cuda'
+  num_workers: 0
+  log_interval: 2  # Reduced from 10

@@ -1,0 +1,146 @@
+# Default configuration for Schrödinger Bridge Synthetic Dataset
+
+# Data generation parameters
+data:
+  dimension: 50  # State space dimension
+  n_cells: 1000  # Number of cells per trajectory
+  n_time_points: 100  # Number of time points
+  total_time: 1.0  # Total evolution time
+  diffusion_coeff: 0.1  # Diffusion coefficient D
+  
+  # Initial state parameters
+  initial_state:
+    sigma_init: 0.5  # Initial state variance
+  
+  # High entropy state parameters
+  high_entropy_state:
+    effective_rank: 5  # Number of large eigenvalues (r << d)
+    lambda_low: 2.0  # Minimum eigenvalue for exploration directions
+    lambda_high: 5.0  # Maximum eigenvalue for exploration directions
+    lambda_small: 0.1  # Small eigenvalue for constrained directions
+    mu_peak_norm: 2.0  # Norm of peak center displacement
+  
+  # Final state parameters
+  final_state:
+    n_modes: 2  # Number of modes in final distribution
+    separation_distance: 8.0  # Distance between mode centers (Delta)
+    sigma_final: 0.5  # Final state variance (per mode)
+    mode_weights: [0.5, 0.5]  # Mixture weights
+  
+  # Time points for three phases
+  time_points:
+    t1: 0.2  # End of equilibrium phase
+    t_peak: 0.4  # Entropy peak time
+    t2: 0.6  # Start of collapse phase
+  
+  # Potential function parameters
+  potential:
+    alpha_init: 1.0  # Initial attractor strength
+    alpha_decay: 0.5  # Decay rate during entropy increase
+    beta_init: 0.5  # Anisotropic harmonic potential strength
+    beta_decay: 0.3  # Decay rate for constraint relaxation
+    gamma_init: 0.1  # Initial well depth
+    gamma_growth: 2.0  # Growth rate during collapse
+
+# Dataset construction
+dataset:
+  train_size: 30  # Number of training trajectories
+  test_size: 10  # Number of test trajectories
+  
+  # Parameter variation ranges for training set
+  train_variation:
+    separation_distance: [5.0, 10.0]  # Delta range
+    lambda_high: [2.0, 5.0]  # Peak eigenvalue range
+    entropy_duration: [0.2, 0.4]  # Fraction of total time for entropy increase
+  
+  # Extrapolation settings for test set
+  test_extrapolation:
+    type: "geometric"  # Options: geometric, topological, temporal
+    geometric:
+      separation_distance: [12.0, 15.0]  # Beyond training range
+      lambda_high: [6.0, 8.0]
+    topological:
+      n_modes: [3, 4, 5]  # More modes than training
+    temporal:
+      total_time: [1.5, 2.0]  # Longer time scales
+
+# Model architectures
+models:
+  ot:
+    hidden_dims: [256, 256, 256]
+    activation: "relu"
+    dropout: 0.1
+  
+  sb:
+    hidden_dims: [512, 512, 512, 512]
+    time_embedding_dim: 64
+    activation: "relu"
+    dropout: 0.1
+  
+  vae:
+    encoder_dims: [256, 128]
+    latent_dim: 32
+    decoder_dims: [128, 256]
+    activation: "relu"
+    dropout: 0.1
+    beta: 1.0  # KL weight
+
+# Training parameters
+training:
+  ot:
+    epochs: 100
+    batch_size: 64
+    learning_rate: 1.0e-3
+    optimizer: "adam"
+    weight_decay: 1.0e-5
+    scheduler:
+      type: "reduce_on_plateau"
+      patience: 10
+      factor: 0.5
+  
+  sb:
+    epochs: 200
+    batch_size: 32
+    learning_rate: 5.0e-4
+    optimizer: "adam"
+    weight_decay: 1.0e-5
+    scheduler:
+      type: "cosine"
+      T_max: 200
+  
+  vae:
+    epochs: 150
+    batch_size: 64
+    learning_rate: 1.0e-3
+    optimizer: "adam"
+    weight_decay: 1.0e-5
+    scheduler:
+      type: "reduce_on_plateau"
+      patience: 10
+      factor: 0.5
+
+# Evaluation parameters
+evaluation:
+  n_samples: 1000  # Number of samples for inference
+  metrics:
+    - "boundary_fidelity"
+    - "path_fidelity"
+    - "entropy_evolution"
+    - "geometric_structure"
+    - "generalization"
+
+# Visualization parameters
+visualization:
+  pca_components: 3
+  umap_components: 2
+  n_trajectories_plot: 5
+  dpi: 300
+  figure_format: "png"
+
+# Experiment settings
+experiment:
+  seed: 42
+  device: "cuda"  # cuda or cpu
+  num_workers: 4
+  save_dir: "outputs"
+  log_interval: 10
