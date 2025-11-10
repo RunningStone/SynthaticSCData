@@ -1,13 +1,13 @@
 """
-Model architectures for trajectory prediction
+Model architecture for trajectory prediction
+- SchrodingerBridgeModel: Base model
+- MLPlus_SchrodingerBridgeModel: Enhanced model with residual connections
 """
 
-from .ot_model import OptimalTransportModel
 from .sb_model import SchrodingerBridgeModel
-from .vae_model import VAEModel
+from .sb_model_mlplus import MLPlus_SchrodingerBridgeModel
 
 __all__ = [
-    "OptimalTransportModel",
     "SchrodingerBridgeModel",
-    "VAEModel",
+    "MLPlus_SchrodingerBridgeModel",
 ]

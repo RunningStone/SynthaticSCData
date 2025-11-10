@@ -1,28 +1,11 @@
 """
-Training and evaluation modules
+Training and evaluation modules for Schrödinger Bridge
 """
 
-from .trainer import ModelTrainer, Trainer
-from .evaluator import ModelEvaluator
-from .metrics import (
-    compute_wasserstein_distance,
-    compute_entropy,
-    BoundaryFidelityMetric,
-    PathFidelityMetric,
-    EntropyEvolutionMetric,
-    GeometricStructureMetric,
-    GeneralizationMetric
-)
+from .sb_trainer import SBTrainer
+from .sb_evaluator import Evaluator
 
 __all__ = [
-    "ModelTrainer",
-    "Trainer",
-    "ModelEvaluator",
-    "compute_wasserstein_distance",
-    "compute_entropy",
-    "BoundaryFidelityMetric",
-    "PathFidelityMetric",
-    "EntropyEvolutionMetric",
-    "GeometricStructureMetric",
-    "GeneralizationMetric",
+    "SBTrainer",
+    "Evaluator",
 ]
