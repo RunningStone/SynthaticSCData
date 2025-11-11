@@ -17,6 +17,27 @@
 - **Setting 2（完整轨迹）**：使用所有中间时间点训练（如 0d → 8h → 1d → 3d → 7d）
   - 数据量: 5 个时间点 × 2000 cells = **10000 cells** ⬆️
   - 模型: **MLPlus_SchrodingerBridgeModel**（增强版）
+## 实验流程
+
+```
+[Step 1/9] 加载和分析数据
+    ↓
+[Step 2/9] 准备 Setting 1 数据 (0d → 7d)
+    ↓
+[Step 3/9] 准备 Setting 2 数据 (0d → 8h → 1d → 3d → 7d)
+    ↓
+[Step 4/9] 训练 Setting 1 - Schrödinger Bridge
+    ↓
+[Step 5/9] 训练 Setting 1 - Optimal Transport
+    ↓
+[Step 6/9] 训练 Setting 1 - Conditional VAE
+    ↓
+[Step 7/9] 训练 Setting 2 - MLPlus Schrödinger Bridge
+    ↓
+[Step 8/9] 评估所有模型
+    ↓
+[Step 9/9] 对比结果并生成可视化
+```
 
 **关键改进**（v2.0）:
 - ✅ Setting 2 数据量增加 2.5 倍，充分利用多时间点信息

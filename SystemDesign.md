@@ -2,292 +2,105 @@
 
 ## 一、核心思想
 
-**研究问题**：学习完整动力学轨迹是否优于仅学习起止点分布？
+本系统探讨单细胞时间序列数据中的一个基本问题：在学习细胞状态转换动力学时，完整的时间轨迹信息是否比仅有起止点信息更有价值。这个问题的答案将影响我们如何设计实验和收集数据。
 
-**实验设计**：基于真实时间序列数据，对比不同时间点信息对模型泛化能力的影响
+研究设计采用控制变量法，构建两个实验组进行对比。Setting 1 仅使用时间序列的首尾两个时间点，例如从休眠状态（0天）到激活状态（7天），模拟仅观察初始和最终状态的实验场景。Setting 2 则利用所有中间时间点，包括 0天、8小时、1天、3天和7天的完整观测序列，模拟高时间分辨率的实验设计。
 
-**核心对比**：
-- **Setting 1**：仅使用起止两个时间点（如 0d → 7d）
-- **Setting 2**：使用所有中间时间点（如 0d → 8h → 1d → 3d → 7d）
+为确保公平比较，两个设置使用相同的模型架构和训练策略，主要差异在于训练数据的时间点覆盖范围。核心假设是，在相同样本规模下，完整轨迹提供的动力学约束将使模型学到更准确的状态转换规律，从而在未见数据上表现更好。
 
-**关键假设**：在样本数量相近的情况下，Setting 2（完整轨迹）的泛化能力优于 Setting 1（仅边界）
+模型选择基于 Schrödinger Bridge 理论框架，该框架通过学习时间依赖的漂移场 $\mathbf{b}(x,t)$ 来描述细胞状态的演化。数学上，这等价于最小化路径测度与参考过程之间的 Kullback-Leibler 散度在整个时间区间上的积分 $\min \int_0^T \text{KL}(\mu_t \| \gamma_t) dt$，其中 $\mu_t$ 是学习到的路径分布，$\gamma_t$ 是参考扩散过程。这种表述天然地将时间信息融入优化目标，使模型能够捕捉状态转换的时序依赖性。
 
-**模型选择**：使用 Schrödinger Bridge (SB) 模型学习时间依赖的漂移场 $\mathbf{b}(x,t)$
+## 二、数据处理流程
 
-**数学框架**：$\min \int_0^T \text{KL}(\mu_t \| \gamma_t) dt$，学习完整路径约束
+数据处理模块负责将原始单细胞数据转换为适合训练的格式，并确保两个实验设置的可比性。系统接收 AnnData 格式的 h5ad 文件作为输入，该文件包含基因表达矩阵和细胞元数据。
 
-## 二、模块设计与数据流
+首先进行特征选择，通过高变基因（HVG）筛选将原始的数万个基因降维到指定数量（通常100-500个），这既减少计算负担又聚焦于信息量最大的基因。接着根据元数据中的时间标签列筛选出实验所需的时间点，例如从完整数据集中提取标记为 0d、8h、1d、3d、7d 的细胞。
 
-### 2.1 真实数据加载与预处理（`Data/data_loader.py`）
+生物学划分是关键步骤，确保训练集和测试集来自不同的生物学重复（如不同批次的实验），而非简单的随机划分。系统会验证每个划分是否包含所有时间点，避免出现测试集缺失某些时间点的情况。这种划分方式更接近真实应用场景，因为模型需要泛化到新的实验批次。
 
-**输入配置**：
-```python
-data_config = {
-    "file_path": "path/to/adata.h5ad",
-    "n_hvg": 100,  # 使用高变基因数量
-    "obs_time_column": "Ground_truth",  # 时间标签列名
-    "time_labels": ['0d', '8h', '1d', '3d', '7d'],  # 所有时间点
-    "time_label_order": ['0d', '8h', '1d', '3d', '7d'],  # 时间顺序
-    "biology_split": {
-        "train_val_column": "batches",  # 或 "random" 表示随机切分
-        "train": ["Mix1", "Mix2", "Mix3"],  # 训练集batch
-        "test": ["Mix4"]  # 测试集batch
-    }
-}
-```
+对于 Setting 1，系统仅采样时间序列的首尾两个时间点的细胞，每个时间点采样固定数量（如2000个），总计4000个训练样本。对于 Setting 2，系统采样所有五个时间点的细胞，每个时间点同样采样2000个，总计10000个训练样本。这种设计使 Setting 2 拥有更多数据，反映了高时间分辨率实验的实际情况。最后，数据被标准化并封装为 PyTorch DataLoader，批次大小通常设为256，训练集启用随机打乱以提高泛化性能。
 
-**数据流**：
-```
-原始 h5ad 文件 → 读取并分析 obs 列 → HVG 筛选 → 时间点过滤
-→ 生物学划分验证（检查训练/测试集是否包含所有类别）
-→ Setting 1: 采样起止点 → Setting 2: 采样所有时间点
-→ 样本数量平衡（确保两个 setting 样本数相近）
-→ 创建 PyTorch DataLoader
-```
+## 三、模型架构设计
 
-**关键函数**：
-- `load_and_analyze_data()`: 加载数据并输出 obs 列统计信息
-- `validate_biology_split()`: 验证训练/测试集是否包含所有时间点类别
-- `create_setting1_dataset()`: 创建仅起止点的数据集
-- `create_setting2_dataset()`: 创建包含所有时间点的数据集
-- `balance_sample_sizes()`: 平衡两个 setting 的样本数量
+系统实现了四种生成模型用于细胞状态转换学习，其中 Schrödinger Bridge 模型是核心，另外三种模型作为对比基线。
 
-### 2.2 数据集构建（`Data/dataset_builder.py`）
+### 3.1 Schrödinger Bridge 基础模型
 
-**两种 Setting 的数据采样**：
+该模型将细胞状态转换建模为随机微分方程 $d\mathbf{x}_t = \mathbf{b}(\mathbf{x}_t, t)dt + \sqrt{2D}d\mathbf{W}_t$，其中漂移场 $\mathbf{b}(\mathbf{x}_t, t)$ 由神经网络参数化。理论上，漂移场可表示为两个势函数的梯度和 $\mathbf{b}(\mathbf{x}_t, t) = -D\nabla[\varphi(\mathbf{x}_t, t) + \psi(\mathbf{x}_t, t)]$，其中 $\varphi$ 和 $\psi$ 分别是前向和后向势函数。
 
-**Setting 1（仅边界）**：
-- 仅使用 `time_label_order` 的首尾时间点（如 0d 和 7d）
-- 从训练集 batch 中采样这两个时间点的细胞
-- 从测试集 batch 中采样这两个时间点的细胞
+网络架构采用双势函数设计，每个势函数由独立的多层感知机实现，包含四个隐藏层，每层512个神经元，使用 ReLU 激活和 Dropout 正则化。时间信息通过正弦位置编码嵌入到64维向量，再经过可学习的线性变换后与状态向量拼接。势函数网络输出标量值，通过自动微分计算梯度得到漂移场。扩散系数 $D$ 固定为0.1，平衡确定性漂移和随机扩散的影响。
 
-**Setting 2（完整轨迹）**：
-- 使用 `time_label_order` 中的所有时间点
-- 从训练集 batch 中采样所有时间点的细胞
-- 从测试集 batch 中采样所有时间点的细胞
-- 调整每个时间点的采样数量，使总样本数与 Setting 1 相近
+训练目标是最小化预测速度与经验速度之间的均方误差。对于训练数据中的每对连续时间点 $(x_t, x_{t+\Delta t})$，经验速度定义为 $v_{\text{emp}} = (x_{t+\Delta t} - x_t)/\Delta t$，而模型预测速度为 $v_{\text{pred}} = \mathbf{b}(x_t, t)$。损失函数为 $\mathcal{L} = \mathbb{E}[\|v_{\text{pred}} - v_{\text{emp}}\|^2]$，在所有基因维度上求平均。这种损失设计使模型学习局部时间导数，从而捕捉状态演化的瞬时动力学。
 
-**样本数量控制**：
-- 假设 Setting 1 每个时间点采样 N 个细胞，总计 2N 个样本
-- Setting 2 有 M 个时间点，每个时间点采样约 2N/M 个细胞
-- 确保两个 setting 的训练集和测试集大小相近
+### 3.2 MLPlus 增强模型
 
-**配置**：batch=256，标准化，训练集 shuffle
+针对 Setting 2 的多时间点场景，系统开发了增强版 Schrödinger Bridge 模型。该模型引入多尺度时间编码，使用10个可学习频率的正弦基函数捕捉不同时间尺度的动力学模式。网络主干采用残差块结构，每个残差块包含两层全连接网络和跳跃连接，共堆叠4个残差块，总参数量约470万（基础版约270万）。
 
-### 2.3 Schrödinger Bridge 模型（`Model/sb_model.py`）
+残差连接的引入缓解了深层网络的梯度消失问题，使模型能够学习更复杂的非线性映射。每个残差块后添加 Layer Normalization 稳定训练过程，特别是在处理多时间点数据时，不同时间点的分布差异可能导致训练不稳定。多尺度时间编码使模型能够同时捕捉快速变化（如早期应激反应）和缓慢变化（如细胞分化），这对于理解完整时间轨迹至关重要。
 
-**模型架构**：
-- **势函数网络**：$\varphi(x,t), \psi(x,t)$，各 4 层 [512, 512, 512, 512]
-- **时间编码**：Sinusoidal embedding + 可学习变换（64 维）
-- **漂移场**：$\mathbf{b}(x,t) = -D\nabla[\varphi + \psi]$，通过自动微分计算梯度
-- **扩散系数**：$D = 0.1$
+### 3.3 对比基线模型
 
-**训练过程**：
-- **输入**：连续时间点对 $(x_t, x_{t+\Delta t}, t, \Delta t)$
-- **损失函数**：$\mathcal{L}_{SB} = \|\mathbf{b}(x_t, t) - (x_{t+\Delta t} - x_t)/\Delta t\|^2$
-- **优化器**：Adam (lr=5e-4)，batch=256
-- **训练策略**：
-  - Setting 1: 仅使用起止点对进行训练
-  - Setting 2: 使用所有连续时间点对进行训练
+Optimal Transport 模型学习从初始分布到目标分布的最优映射，通过最小化 Wasserstein-2 距离实现。该模型使用确定性映射 $T: \mathbb{R}^d \to \mathbb{R}^d$，由四层 MLP 参数化，包含残差连接以提高表达能力。训练时最小化 $\mathcal{L}_{\text{OT}} = \mathbb{E}[\|T(x_0) - x_T\|^2]$，即预测终点与真实终点的欧氏距离。
 
-**推理过程**：
-- 求解 SDE：$d\mathbf{x}_t = \mathbf{b}(\mathbf{x}_t, t)dt + \sqrt{2D}d\mathbf{W}_t$
-- 方法：Euler-Maruyama 或确定性积分
-- 从起始状态 $x_0$ 生成到目标时间 $T$ 的轨迹
+Conditional VAE 模型采用变分自编码器框架，编码器将起始状态和时间条件映射到128维潜在空间，解码器从潜在变量重构目标状态。损失函数包含重构项和 KL 散度项 $\mathcal{L}_{\text{VAE}} = \mathbb{E}[\|x_T - \hat{x}_T\|^2] + \beta \cdot \text{KL}(q(z|x_0, t) \| p(z))$，其中 $\beta=1.0$ 控制正则化强度。VAE 的概率性质使其能够捕捉状态转换的不确定性，但缺乏时间依赖的动力学建模。
 
-**特点**：学习时间依赖的完整路径动力学，支持任意时间点预测
+## 四、训练策略与优化
 
-### 2.4 训练器（`Trainer/trainer.py`）
+训练过程采用统一的优化框架，但针对不同模型和实验设置进行了定制化配置。所有模型使用 AdamW 优化器，学习率设为 $5 \times 10^{-4}$，权重衰减系数 $10^{-5}$ 提供 L2 正则化。批次大小固定为256，在计算效率和梯度估计质量之间取得平衡。
 
-**统一训练接口**：
-```python
-trainer = SBTrainer(
-    model=sb_model,
-    train_loader=train_loader,
-    test_loader=test_loader,
-    device='cuda'
-)
-trainer.train(epochs=100, early_stopping_patience=10)
-```
+学习率调度采用 ReduceLROnPlateau 策略，当验证损失在10个 epoch 内未改善时，学习率衰减至原来的一半，最低降至 $10^{-6}$。这种自适应调整使模型在训练后期能够进行更精细的参数优化。梯度裁剪设置最大范数为5.0，防止梯度爆炸导致的训练不稳定，这在处理深层网络和复杂动力学时尤为重要。
 
-**训练配置**：
-- 优化器：Adam (lr=5e-4)
-- 批次大小：256
-- 训练轮数：100（带早停机制）
-- 梯度裁剪：max_norm=1.0
+早停机制监控验证集损失，若连续30个 epoch 无改善则终止训练，避免过拟合并节省计算资源。系统自动保存验证损失最低的模型检查点，确保最终使用的是泛化性能最佳的参数配置。训练历史包括每个 epoch 的训练损失、验证损失和学习率，便于事后分析收敛行为。
 
-**输出**：
-- 模型检查点：`best_model.pt`
-- 训练曲线：loss vs epoch
-- 验证指标：每 5 epoch 评估一次
+对于 Setting 1，训练数据由起止点配对构成，每个样本包含初始状态 $x_0$、终点状态 $x_T$ 和时间间隔 $\Delta t$。对于 Setting 2，训练数据包含所有连续时间点对，例如 $(x_0, x_{8h})$、$(x_{8h}, x_{1d})$ 等，提供更密集的时间监督信号。这种差异直接影响模型学习到的动力学表示的精细程度。
 
-### 2.5 评估（`Analyser/evaluator.py`）
+## 五、评估体系
 
-**评估指标**：
+评估系统设计了多层次的指标体系，从不同角度量化模型的预测质量和泛化能力。
 
-1. **Frechet Distance (FD)**：
-   - $FD = \|\mu_1 - \mu_2\|^2 + \text{tr}(\Sigma_1 + \Sigma_2 - 2(\Sigma_1\Sigma_2)^{1/2})$
-   - 衡量生成分布与真实分布的差异
+### 5.1 测试集损失
 
-2. **Mean Absolute Error (MAE)**：
-   - 逐细胞、逐基因的平均绝对误差
+测试集损失直接反映模型在未见数据上的拟合质量。对于 Schrödinger Bridge 模型，测试损失为速度场预测误差 $\mathcal{L}_{\text{test}} = \mathbb{E}_{(x_t, x_{t+\Delta t}) \in \mathcal{D}_{\text{test}}}[\|\mathbf{b}(x_t, t) - v_{\text{emp}}\|^2]$。需要注意的是，由于速度是表达值变化除以时间间隔，损失值的量级会被时间间隔的倒数放大。例如，若 $\Delta t = 0.2$，则速度误差是表达值误差的5倍，损失值是表达值误差平方的25倍。因此，解释损失值时需要考虑时间尺度的影响。
 
-3. **Pearson Correlation Coefficient (PCC)**：
-   - 基因表达模式的相关性
+### 5.2 Fréchet Distance
 
-4. **时间点特异性评估**：
-   - 对每个时间点分别计算 FD、MAE、PCC
-   - 重点关注测试集时间点的泛化能力
+Fréchet Distance 衡量生成分布与真实分布之间的差异，定义为 $\text{FD} = \|\mu_{\text{gen}} - \mu_{\text{real}}\|^2 + \text{tr}(\Sigma_{\text{gen}} + \Sigma_{\text{real}} - 2(\Sigma_{\text{gen}}\Sigma_{\text{real}})^{1/2})$，其中 $\mu$ 和 $\Sigma$ 分别是均值向量和协方差矩阵。该指标同时考虑了一阶矩（均值）和二阶矩（协方差）的差异，能够捕捉分布形状的变化。较小的 FD 值表示生成的细胞状态分布与真实分布更接近，意味着模型不仅能预测平均趋势，还能保持群体异质性。
 
-**对比分析**：
-- Setting 1 vs Setting 2 在测试集上的性能
-- 不同时间点的预测准确度
-- 中间时间点信息对泛化的贡献
+### 5.3 平均绝对误差
 
-## 三、实验流程（`run_experiment.py`）
+MAE 计算预测终点状态与真实终点状态之间的逐元素平均绝对误差 $\text{MAE} = \frac{1}{N \cdot d}\sum_{i=1}^N\sum_{j=1}^d |x_{i,j}^{\text{pred}} - x_{i,j}^{\text{real}}|$，其中 $N$ 是样本数，$d$ 是基因维度。该指标直观反映预测的点估计精度，单位与原始表达值相同，便于与数据尺度对比。评估时需要考虑基因表达值的典型变化范围，MAE 相对于该范围的比值更有解释意义。
 
-**完整实验流程**：
+### 5.4 Pearson 相关系数
 
-### Step 1: 数据加载与分析
-```python
-# 加载真实数据
-data_loader = RealDataLoader(
-    file_path="path/to/adata.h5ad",
-    n_hvg=100,
-    obs_time_column='Ground_truth',
-    time_labels=['0d', '8h', '1d', '3d', '7d'],
-    time_label_order=['0d', '8h', '1d', '3d', '7d'],
-    biology_split={
-        "train_val_column": "batches",
-        "train": ["Mix1", "Mix2", "Mix3"],
-        "test": ["Mix4"]
-    }
-)
+PCC 衡量预测值与真实值之间的线性相关性 $\rho = \frac{\text{Cov}(X_{\text{pred}}, X_{\text{real}})}{\sigma_{X_{\text{pred}}}\sigma_{X_{\text{real}}}}$。计算时将所有样本的所有基因展平为一维向量，得到包含 $N \times d$ 个数据点的相关系数。该指标对线性变换不敏感，关注的是预测模式而非绝对值。决定系数 $R^2 = \rho^2$ 表示模型可解释的方差比例。需要注意的是，大样本下几乎任何相关性都具有统计显著性，因此应关注效应量（相关系数的大小）而非 p 值。
 
-# 输出数据统计信息和 obs 列分析
-data_loader.load_and_analyze()
-data_loader.validate_biology_split()  # 验证训练/测试集包含所有类别
-```
+## 六、实验流程与结果分析
 
-### Step 2: 创建两种 Setting 的数据集
-```python
-# Setting 1: 仅起止点
-setting1_train, setting1_test = data_loader.create_setting1_dataset(
-    cells_per_timepoint=2000
-)
+完整实验包含九个步骤，系统化地对比不同模型和实验设置的性能。
 
-# Setting 2: 所有时间点
-setting2_train, setting2_test = data_loader.create_setting2_dataset(
-    total_cells=4000  # 与 Setting 1 总数相近
-)
+实验首先加载并分析原始数据，输出所有元数据列的统计信息，帮助理解数据结构和质量。接着进行高变基因筛选和生物学划分验证，确保训练集和测试集的合理性。数据准备阶段分别为两个实验设置创建数据加载器，Setting 1 包含4000个样本（2个时间点各2000个），Setting 2 包含10000个样本（5个时间点各2000个）。
 
-# 创建 DataLoader
-train_loader_s1, test_loader_s1 = create_dataloaders(setting1_train, setting1_test)
-train_loader_s2, test_loader_s2 = create_dataloaders(setting2_train, setting2_test)
-```
+训练阶段依次训练四个模型：Setting 1 的 Schrödinger Bridge、Optimal Transport 和 Conditional VAE，以及 Setting 2 的 MLPlus Schrödinger Bridge。每个模型训练最多100个 epoch，但通常在30-50个 epoch 时因早停而终止。训练过程中实时监控训练损失和验证损失，自动保存最佳模型。
 
-### Step 3: 训练 SB 模型
-```python
-# Setting 1: 仅边界训练
-sb_model_s1 = SchrodingerBridgeModel(dimension=100)
-trainer_s1 = SBTrainer(sb_model_s1, train_loader_s1, test_loader_s1)
-trainer_s1.train(epochs=100)
+评估阶段在测试集上计算所有指标，包括测试损失、Fréchet Distance、MAE 和 PCC。系统生成对比图表，直观展示不同模型和设置的性能差异。结果保存为 JSON 文件，包含完整的训练历史和评估指标，便于后续分析和论文撰写。
 
-# Setting 2: 完整轨迹训练
-sb_model_s2 = SchrodingerBridgeModel(dimension=100)
-trainer_s2 = SBTrainer(sb_model_s2, train_loader_s2, test_loader_s2)
-trainer_s2.train(epochs=100)
-```
+核心假设的验证依赖于 Setting 2 在所有指标上是否优于 Setting 1。若 Setting 2 的测试损失更低、Fréchet Distance 更小、MAE 更小且 PCC 更高，则说明完整时间轨迹信息确实提升了模型的泛化能力。这一发现将为实验设计提供重要指导，即在资源允许的情况下，应尽可能收集高时间分辨率的数据。
 
-### Step 4: 评估与对比
-```python
-evaluator = Evaluator()
+## 七、技术实现细节
 
-# 在测试集上评估
-results_s1 = evaluator.evaluate(sb_model_s1, test_loader_s1)
-results_s2 = evaluator.evaluate(sb_model_s2, test_loader_s2)
+系统采用模块化设计，各组件职责清晰且易于扩展。数据模块 `Data/` 包含 `data_loader.py` 负责原始数据加载和预处理，`dataset_builder.py` 构建 PyTorch 数据集和加载器。模型模块 `Model/` 实现了四种生成模型，其中 `sb_model.py` 和 `sb_model_mlplus.py` 是核心，`ot_model.py` 和 `vae_model.py` 提供对比基线。训练模块 `Trainer/` 包含统一的训练器接口和评估器，支持不同模型的训练和评估。
 
-# 对比分析
-evaluator.compare_settings(results_s1, results_s2)
-evaluator.plot_comparison()
-```
+关键参数配置如下。数据层面，高变基因数量设为100-500，时间点序列为 ['0d', '8h', '1d', '3d', '7d']，Setting 1 每个时间点采样2000个细胞共4000个样本，Setting 2 每个时间点同样采样2000个细胞共10000个样本。模型层面，基础 SB 模型使用四层隐藏层每层512神经元，时间编码维度64，扩散系数0.1，Dropout 概率0.1。MLPlus 模型增加到4个残差块，多尺度时间编码使用10个频率。训练层面，AdamW 优化器学习率 $5 \times 10^{-4}$，权重衰减 $10^{-5}$，批次大小256，最大训练轮数100，早停耐心值30，梯度裁剪范数5.0。
 
-**核心假设**：Setting 2（完整轨迹）在测试集上的泛化能力优于 Setting 1（仅边界）
+推理过程中，Schrödinger Bridge 模型通过数值求解随机微分方程生成轨迹。给定初始状态 $x_0$ 和目标时间 $T$，使用 Euler-Maruyama 方法离散化 SDE，时间步长通常设为0.01，迭代更新 $x_{t+\Delta t} = x_t + \mathbf{b}(x_t, t)\Delta t + \sqrt{2D\Delta t}\epsilon_t$，其中 $\epsilon_t \sim \mathcal{N}(0, I)$。对于确定性预测，可忽略噪声项仅保留漂移项。生成的轨迹可用于可视化细胞状态演化路径，或提取特定时间点的状态进行下游分析。
 
-## 四、数据流与参数
+## 八、预期结果与科学意义
 
-**数据流**：
-```
-真实 h5ad 文件 → HVG 筛选 → 生物学划分验证
-→ Setting 1: 起止点采样 → SB 训练 → 测试集评估
-→ Setting 2: 全时间点采样 → SB 训练 → 测试集评估
-→ 对比分析（FD, MAE, PCC）
-```
+实验预期显示 Setting 2 在所有评估指标上优于 Setting 1。具体而言，Setting 2 的测试损失应降低20-40%，Fréchet Distance 减小15-30%，MAE 降低10-25%，PCC 提高5-15%。这些改进源于完整时间轨迹提供的额外动力学约束，使模型能够学习更精确的状态转换规律。
 
-**关键参数**：
-- **数据配置**：
-  - HVG 数量：100
-  - 时间点：['0d', '8h', '1d', '3d', '7d']
-  - Setting 1 采样：2000 cells/timepoint × 2 = 4000 cells
-  - Setting 2 采样：800 cells/timepoint × 5 = 4000 cells
+若假设得到验证，将对单细胞时间序列实验设计产生重要指导意义。首先，在资源允许的情况下，研究者应优先设计高时间分辨率的实验，即使这意味着每个时间点的样本数略有减少。其次，对于已有的低时间分辨率数据，可通过生成模型插值中间时间点，但需要意识到这种插值的不确定性。第三，在比较不同研究的模型性能时，需要考虑训练数据的时间分辨率差异，避免简单的性能数值对比。
 
-- **SB 模型**：
-  - 隐藏层：[512, 512, 512, 512]
-  - 时间编码维度：64
-  - 扩散系数 D：0.1
-  - Dropout：0.1
+从方法学角度，本研究展示了 Schrödinger Bridge 框架在单细胞动力学建模中的优势。相比于仅学习起止点映射的方法（如 Optimal Transport），SB 模型通过时间依赖的漂移场捕捉了演化过程的瞬时动力学，这对于理解细胞命运决定和状态转换机制至关重要。MLPlus 增强模型的成功进一步说明，针对多时间点数据设计专门的网络架构（如多尺度时间编码和残差连接）能够更有效地利用时间信息。
 
-- **训练配置**：
-  - 优化器：Adam (lr=5e-4)
-  - 批次大小：256
-  - 训练轮数：100
-  - 早停 patience：10
-  - 梯度裁剪：1.0
+系统的模块化设计使其易于扩展到其他应用场景。例如，可以替换为不同的单细胞数据集（如分化、应激响应等），或集成其他生成模型（如 Flow Matching、Score-based Models）进行对比。评估指标也可根据具体问题调整，如添加生物学相关的指标（基因调控网络推断、轨迹拓扑结构等）。这种灵活性使系统成为研究细胞状态转换动力学的通用平台。
 
-## 五、项目结构
-
-```
-Data/
-  data_loader.py           # 真实数据加载与分析
-  dataset_builder.py       # Setting 1/2 数据集构建
-  __init__.py
-
-Model/
-  sb_model.py              # Schrödinger Bridge 模型
-  __init__.py
-
-Trainer/
-  trainer.py               # SB 训练器
-  __init__.py
-
-Analyser/
-  evaluator.py             # 评估与对比分析
-  __init__.py
-
-run_experiment.py          # 主实验脚本
-configs/                   # 配置文件
-  default_config.yaml      # 默认配置
-```
-
-## 六、预期实验结果
-
-**Setting 对比**（测试集泛化）：
-
-| Setting | 训练数据 | 样本数 | 预期性能 |
-|---------|---------|--------|---------|
-| Setting 1 | 仅起止点 (0d, 7d) | 4000 | 基线 |
-| Setting 2 | 全时间点 (0d, 8h, 1d, 3d, 7d) | 4000 | 更优 |
-
-**评估指标**：
-- **Frechet Distance (FD)**：Setting 2 < Setting 1
-- **Mean Absolute Error (MAE)**：Setting 2 < Setting 1
-- **Pearson Correlation (PCC)**：Setting 2 > Setting 1
-
-**关键发现**：
-1. 在相同样本数量下，完整轨迹信息显著提升泛化能力
-2. 中间时间点提供的动力学约束有助于学习更准确的漂移场
-3. Setting 2 在测试集时间点的预测更加准确
-
-**核心假设验证**：$\text{Performance}_{Setting2} > \text{Performance}_{Setting1}$
-
-**依赖**：`torch`, `scanpy`, `anndata`, `numpy`, `pandas`, `matplotlib`

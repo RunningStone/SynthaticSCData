@@ -12,6 +12,7 @@ from typing import Dict, List
 import matplotlib.pyplot as plt
 from scipy.linalg import sqrtm
 from scipy.stats import pearsonr
+from .metrics import compute_all_metrics
 
 
 class Evaluator:
@@ -66,6 +67,9 @@ class Evaluator:
         mae = self._compute_mae(model, all_X, all_y)
         pcc = self._compute_pcc(model, all_X, all_y)
         
+        # Compute advanced metrics (Wasserstein, MMD, R², JS, Correlation)
+        advanced_metrics = self._compute_advanced_metrics(model, all_X, all_y)
+        
         results = {
             'test_loss': test_loss,
             'frechet_distance': frechet_distance,
@@ -73,6 +77,9 @@ class Evaluator:
             'pcc': pcc,
             'n_samples': len(all_X)
         }
+        
+        # Merge advanced metrics
+        results.update(advanced_metrics)
         
         return results
     
@@ -90,6 +97,14 @@ class Evaluator:
         time_to_indices = {t.item(): (y == t).nonzero(as_tuple=True)[0] for t in unique_times}
         
         sorted_times = sorted(time_to_indices.keys())
+        
+        # Check if model is SB (has time-dependent loss) or OT/VAE (direct mapping)
+        # SB models have compute_loss(x_t, x_next, t, dt)
+        # OT/VAE models have compute_loss(x_source, x_target)
+        import inspect
+        loss_signature = inspect.signature(model.compute_loss)
+        is_time_dependent = len(loss_signature.parameters) > 2
+        
         for i in range(len(sorted_times) - 1):
             t_curr = sorted_times[i]
             t_next = sorted_times[i + 1]
@@ -104,10 +119,15 @@ class Evaluator:
             x_t = X[indices_curr[:n_pairs_curr]]
             x_next = X[indices_next[:n_pairs_curr]]
             
-            t = torch.full((n_pairs_curr,), float(t_curr) / len(sorted_times), device=self.device)
-            dt = 1.0 / len(sorted_times)
+            if is_time_dependent:
+                # SB model: needs time parameters
+                t = torch.full((n_pairs_curr,), float(t_curr) / len(sorted_times), device=self.device)
+                dt = 1.0 / len(sorted_times)
+                loss = model.compute_loss(x_t, x_next, t, dt)
+            else:
+                # OT/VAE model: direct mapping
+                loss = model.compute_loss(x_t, x_next)
             
-            loss = model.compute_loss(x_t, x_next, t, dt)
             total_loss += loss.detach().item() * n_pairs_curr
             n_pairs += n_pairs_curr
         
@@ -268,6 +288,82 @@ class Evaluator:
             print(f"Warning: Could not compute PCC: {e}")
             return float('nan')
     
+    def _compute_advanced_metrics(
+        self,
+        model: torch.nn.Module,
+        X: torch.Tensor,
+        y: torch.Tensor
+    ) -> Dict:
+        """
+        Compute advanced metrics: Wasserstein, MMD, R² per gene, JS divergence, 
+        and correlation structure similarity.
+        """
+        try:
+            unique_times = torch.unique(y)
+            time_to_indices = {t.item(): (y == t).nonzero(as_tuple=True)[0] for t in unique_times}
+            sorted_times = sorted(time_to_indices.keys())
+            
+            if len(sorted_times) < 2:
+                return {
+                    'wasserstein_distance': float('nan'),
+                    'mmd': float('nan'),
+                    'r2_mean': float('nan'),
+                    'r2_median': float('nan'),
+                    'r2_std': float('nan'),
+                    'js_divergence': float('nan'),
+                    'correlation_frobenius_diff': float('nan'),
+                    'correlation_structure_corr': float('nan')
+                }
+            
+            # Get start and end timepoints
+            t_start = sorted_times[0]
+            t_end = sorted_times[-1]
+            
+            indices_start = time_to_indices[t_start]
+            indices_end = time_to_indices[t_end]
+            
+            x_start = X[indices_start]
+            x_real_end = X[indices_end]
+            
+            # Generate trajectory
+            time_grid = torch.linspace(
+                float(t_start) / len(sorted_times),
+                float(t_end) / len(sorted_times),
+                steps=10,
+                device=self.device
+            )
+            
+            trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
+            x_gen_end = trajectory[:, -1, :]
+            
+            # Match sizes
+            n_samples = min(len(x_real_end), len(x_gen_end))
+            
+            # Convert to numpy for metric computation
+            real_np = x_real_end[:n_samples].detach().cpu().numpy()
+            gen_np = x_gen_end[:n_samples].detach().cpu().numpy()
+            
+            # Compute all advanced metrics
+            print("  Computing advanced metrics...")
+            metrics = compute_all_metrics(real_np, gen_np, include_detailed=False)
+            
+            return metrics
+        
+        except Exception as e:
+            print(f"Warning: Could not compute advanced metrics: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'wasserstein_distance': float('nan'),
+                'mmd': float('nan'),
+                'r2_mean': float('nan'),
+                'r2_median': float('nan'),
+                'r2_std': float('nan'),
+                'js_divergence': float('nan'),
+                'correlation_frobenius_diff': float('nan'),
+                'correlation_structure_corr': float('nan')
+            }
+    
     def plot_comparison(
         self,
         results_s1: Dict,
@@ -275,41 +371,62 @@ class Evaluator:
         save_path: str
     ):
         """
-        Plot comparison between Setting 1 and Setting 2
+        Plot comprehensive comparison between Setting 1 and Setting 2
         
         Args:
             results_s1: Results from Setting 1
             results_s2: Results from Setting 2
             save_path: Path to save figure
         """
-        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        # Create figure with more subplots for all metrics
+        fig, axes = plt.subplots(3, 3, figsize=(18, 15))
+        axes = axes.flatten()
         
-        metrics = ['test_loss', 'frechet_distance', 'mae', 'pcc']
-        titles = ['Test Loss', 'Frechet Distance', 'MAE', 'Pearson Correlation']
+        # Define all metrics to plot
+        metrics = [
+            'test_loss', 'frechet_distance', 'mae', 'pcc',
+            'wasserstein_distance', 'mmd', 'r2_mean', 'js_divergence',
+            'correlation_structure_corr'
+        ]
+        titles = [
+            'Test Loss', 'Frechet Distance', 'MAE', 'Pearson Correlation',
+            'Wasserstein Distance', 'MMD', 'R² (mean)', 'JS Divergence',
+            'Correlation Structure'
+        ]
         
         for idx, (metric, title) in enumerate(zip(metrics, titles)):
-            ax = axes[idx // 2, idx % 2]
+            ax = axes[idx]
             
             val_s1 = results_s1.get(metric, float('nan'))
             val_s2 = results_s2.get(metric, float('nan'))
             
             if not np.isnan(val_s1) and not np.isnan(val_s2):
-                ax.bar(['Setting 1\n(Boundary)', 'Setting 2\n(All Timepoints)'], 
+                bars = ax.bar(['Setting 1\n(Boundary)', 'Setting 2\n(All Timepoints)'], 
                        [val_s1, val_s2],
                        color=['#FF6B6B', '#4ECDC4'])
                 ax.set_ylabel(title)
-                ax.set_title(title)
+                ax.set_title(title, fontweight='bold')
                 ax.grid(axis='y', alpha=0.3)
                 
                 # Add value labels
                 for i, v in enumerate([val_s1, val_s2]):
-                    ax.text(i, v, f'{v:.4f}', ha='center', va='bottom')
+                    ax.text(i, v, f'{v:.4f}', ha='center', va='bottom', fontsize=9)
+                
+                # Highlight better performance
+                if metric in ['pcc', 'r2_mean', 'correlation_structure_corr']:
+                    # Higher is better
+                    better_idx = 0 if val_s1 > val_s2 else 1
+                else:
+                    # Lower is better
+                    better_idx = 0 if val_s1 < val_s2 else 1
+                bars[better_idx].set_edgecolor('gold')
+                bars[better_idx].set_linewidth(3)
             else:
-                ax.text(0.5, 0.5, 'N/A', ha='center', va='center', transform=ax.transAxes)
-                ax.set_title(title)
+                ax.text(0.5, 0.5, 'N/A', ha='center', va='center', transform=ax.transAxes, fontsize=14)
+                ax.set_title(title, fontweight='bold')
         
         plt.tight_layout()
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.close()
         
-        print(f"✓ Comparison plot saved to: {save_path}")
+        print(f"✓ Comprehensive comparison plot saved to: {save_path}")
