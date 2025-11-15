@@ -1,0 +1,169 @@
+# ============================================================================
+# Model Configuration: Architecture and Training Parameters
+# ============================================================================
+# This file defines model architectures and their training hyperparameters.
+
+# Optimal Transport Model
+ot:
+  architecture:
+    hidden_dims: [1536, 1536, 1536, 1536]  # ~7.8M params, closer to SB MLPlus (~9.8M) old [512 512 512 512]
+    activation: "relu"
+    dropout: 0.1
+    use_residual: true
+    use_batch_norm: false
+  
+  training:
+    epochs: 100
+    batch_size: 128
+    learning_rate: 5.0e-4  # Match old experiment (旧实验使用5e-4)
+    optimizer: "adam"
+    optimizer_kwargs:
+      betas: [0.9, 0.999]
+      eps: 1.0e-8
+      weight_decay: 1.0e-5
+    
+    scheduler:
+      type: "reduce_on_plateau"  # Options: reduce_on_plateau, cosine, step, none
+      patience: 10
+      factor: 0.5
+      min_lr: 1.0e-6
+    
+    early_stopping:
+      enabled: true
+      patience: 30  # Match old experiment
+      min_delta: 1.0e-4
+    
+    gradient_clipping:
+      enabled: true
+      max_norm: 5.0  # Match old experiment
+
+# Schrödinger Bridge Model
+sb:
+  architecture:
+    hidden_dims: [1024, 1024, 1024, 1024, 1024]  # ~8.5M params, closer to SB MLPlus (~9.8M) old [512,512,512,512]
+    time_embedding_dim: 64
+    activation: "relu"
+    dropout: 0.1
+    diffusion_coeff: 0.1
+    use_residual: true
+  
+  training:
+    epochs: 200
+    batch_size: 64
+    learning_rate: 5.0e-4  # Match old experiment
+    optimizer: "adam"
+    optimizer_kwargs:
+      betas: [0.9, 0.999]
+      eps: 1.0e-8
+      weight_decay: 1.0e-5
+    
+    scheduler:
+      type: "cosine"
+      T_max: 200
+      eta_min: 1.0e-6
+    
+    early_stopping:
+      enabled: true
+      patience: 30
+      min_delta: 1.0e-4
+    
+    gradient_clipping:
+      enabled: true
+      max_norm: 5.0  # Match old experiment
+
+# MLPlus Schrödinger Bridge Model (for Setting 2)
+sb_mlplus:
+  architecture:
+    hidden_dim: 512
+    n_blocks: 8
+    time_embedding_dim: 64
+    n_time_frequencies: 10
+    activation: "relu"
+    dropout: 0.1
+    diffusion_coeff: 0.1
+    use_residual: true
+  
+  training:
+    epochs: 200
+    batch_size: 64
+    learning_rate: 1.0e-5  # 5.0e-5
+    optimizer: "adam"
+    optimizer_kwargs:
+      betas: [0.9, 0.999]
+      eps: 1.0e-8
+      weight_decay: 1.0e-5
+    
+    scheduler:
+      type: "cosine"
+      T_max: 200
+      eta_min: 1.0e-6
+    
+    early_stopping:
+      enabled: true
+      patience: 30
+      min_delta: 1.0e-4
+    
+    gradient_clipping:
+      enabled: true
+      max_norm: 5.0  # Match old experiment
+
+# Conditional VAE Model
+vae:
+  architecture:
+    hidden_dims: [1536, 768, 256]  # ~9.3M params, closer to SB MLPlus (~9.8M) old [512,256]
+    latent_dim: 128           # Latent space dimension
+    activation: "relu"        # Activation function
+    dropout: 0.1              # Dropout probability
+    beta: 1.0                 # KL divergence weight (β-VAE)
+    use_batch_norm: false
+  
+  training:
+    epochs: 150
+    batch_size: 128
+    learning_rate: 1.0e-3
+    optimizer: "adam"
+    optimizer_kwargs:
+      betas: [0.9, 0.999]
+      eps: 1.0e-8
+      weight_decay: 1.0e-5
+    
+    scheduler:
+      type: "reduce_on_plateau"
+      patience: 10
+      factor: 0.5
+      min_lr: 1.0e-6
+    
+    early_stopping:
+      enabled: true
+      patience: 20
+      min_delta: 1.0e-4
+    
+    gradient_clipping:
+      enabled: true
+      max_norm: 5.0  # Match old experiment
+    
+    # VAE-specific training parameters
+    kl_annealing:
+      enabled: true
+      start_epoch: 0
+      end_epoch: 50
+      start_weight: 0.0
+      end_weight: 1.0
+
+# General training settings (applied to all models if not overridden)
+general:
+  checkpoint:
+    save_best: true
+    save_last: true
+    save_frequency: 10  # Save every N epochs
+    monitor_metric: "val_loss"  # Metric to monitor for best model
+    mode: "min"  # min or max
+  
+  logging:
+    log_frequency: 10  # Log every N batches
+    log_gradients: false
+    log_weights: false
+  
+  reproducibility:
+    deterministic: false  # Set to true for reproducible results (may be slower)
+    benchmark: true  # Set to true for faster training (may be non-deterministic)

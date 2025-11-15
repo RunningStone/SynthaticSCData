@@ -1,40 +1,69 @@
 #!/bin/bash
-# Run unified experiment with fixed VAE model
+# Run experiment from YAML configuration files
+# New modular configuration system
+
+# Parse arguments
+CONFIG_FILE="${1:-experiment_EMT_setting1.yaml}"
+OUTPUT_DIR="${2:-}"
+CONFIG_DIR="configs"
 
 echo "========================================================================"
-echo "Running Unified Experiment with Fixed VAE Model"
+echo "Running Experiment from Configuration"
 echo "========================================================================"
 echo ""
-echo "Configuration:"
-echo "  - HVG: 500"
-echo "  - Cells per timepoint: 5000"
-echo "  - Epochs: 300"
-echo "  - Batch size: 256"
-echo "  - Device: cuda"
-echo "  - Output: /home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/uni_compare"
-echo ""
-echo "Expected improvements for VAE:"
-echo "  - PCC: from -0.66 to > 0.5"
-echo "  - Frechet Distance: from 2,172,022 to < 500,000"
-echo "  - MAE: from 35.29 to < 20"
+echo "Configuration file: $CONFIG_FILE"
+echo "Configuration directory: $CONFIG_DIR"
+if [ -n "$OUTPUT_DIR" ]; then
+    echo "Output directory (override): $OUTPUT_DIR"
+fi
 echo ""
 echo "========================================================================"
 echo ""
+
+# Check if config file exists
+if [ ! -f "$CONFIG_DIR/$CONFIG_FILE" ]; then
+    echo "Error: Configuration file not found: $CONFIG_DIR/$CONFIG_FILE"
+    echo ""
+    echo "Available configuration files:"
+    ls -1 $CONFIG_DIR/experiment_*.yaml 2>/dev/null || echo "  No experiment configs found"
+    echo ""
+    echo "Usage: $0 [config_file] [output_dir]"
+    echo "Examples:"
+    echo "  $0 experiment_EMT_setting1.yaml"
+    echo "  $0 experiment_EMT_setting1.yaml /home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs"
+    exit 1
+fi
 
 # Activate environment
-source .venv/bin/activate
+if [ -d ".venv" ]; then
+    echo "Activating virtual environment..."
+    source .venv/bin/activate
+elif [ -d "venv" ]; then
+    echo "Activating virtual environment..."
+    source venv/bin/activate
+else
+    echo "Warning: No virtual environment found (.venv or venv)"
+fi
 
 # Run experiment
-python step1_run_experiment_unified.py \
-    --n_hvg 500 \
-    --cells_per_timepoint 5000 \
-    --epochs 300 \
-    --batch_size 256 \
-    --output_dir /home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/uni_compare \
-    --device cuda
+echo "Starting experiment..."
+echo ""
+if [ -n "$OUTPUT_DIR" ]; then
+    python step1_run_experiment.py "$CONFIG_FILE" --config_dir "$CONFIG_DIR" --output_dir "$OUTPUT_DIR"
+else
+    python step1_run_experiment.py "$CONFIG_FILE" --config_dir "$CONFIG_DIR"
+fi
+
+EXIT_CODE=$?
 
 echo ""
 echo "========================================================================"
-echo "Experiment complete!"
-echo "Check results at: /home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/uni_compare"
+if [ $EXIT_CODE -eq 0 ]; then
+    echo "Experiment complete!"
+    echo "Check results in the output directory specified in the config file"
+else
+    echo "Experiment failed with exit code: $EXIT_CODE"
+fi
 echo "========================================================================"
+
+exit $EXIT_CODE

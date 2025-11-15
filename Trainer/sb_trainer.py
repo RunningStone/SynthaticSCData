@@ -248,8 +248,10 @@ class SBTrainer:
             if test_loss < self.best_test_loss:
                 self.best_test_loss = test_loss
                 self.patience_counter = 0
+                checkpoint_path = self.output_dir / 'best_model.pt'
                 self.save_checkpoint('best_model.pt')
                 print(f"✓ New best model saved (test loss: {test_loss:.6f})")
+                print(f"  Saved to: {checkpoint_path}")
             else:
                 self.patience_counter += 1
                 print(f"Patience: {self.patience_counter}/{early_stopping_patience}")
@@ -261,17 +263,25 @@ class SBTrainer:
             
             # Save checkpoint every 10 epochs
             if (epoch + 1) % 10 == 0:
-                self.save_checkpoint(f'checkpoint_epoch_{epoch+1}.pt')
+                checkpoint_name = f'checkpoint_epoch_{epoch+1}.pt'
+                checkpoint_path = self.output_dir / checkpoint_name
+                self.save_checkpoint(checkpoint_name)
+                print(f"  Checkpoint saved to: {checkpoint_path}")
         
         # Save final model
+        final_model_path = self.output_dir / 'final_model.pt'
         self.save_checkpoint('final_model.pt')
+        print(f"\n✓ Final model saved to: {final_model_path}")
         
         # Save history
-        with open(self.output_dir / 'training_history.json', 'w') as f:
+        history_path = self.output_dir / 'training_history.json'
+        with open(history_path, 'w') as f:
             json.dump(self.history, f, indent=2)
+        print(f"✓ Training history saved to: {history_path}")
         
         print(f"\n✓ Training complete!")
         print(f"Best test loss: {self.best_test_loss:.6f}")
+        print(f"All outputs saved to: {self.output_dir}")
         
         return self.history
     

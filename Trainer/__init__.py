@@ -8,9 +8,12 @@ Training and evaluation modules for trajectory models
 from .sb_trainer import SBTrainer
 from .unified_trainer import UnifiedTrainer
 from .sb_evaluator import Evaluator
+from .utils import train_model, run_experiment_from_config
 
 __all__ = [
     "SBTrainer",
     "UnifiedTrainer",
     "Evaluator",
+    "train_model",
+    "run_experiment_from_config",
 ]
