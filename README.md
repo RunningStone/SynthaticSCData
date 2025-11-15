@@ -19,6 +19,13 @@
   - 模型: **MLPlus_SchrodingerBridgeModel**（增强版）
 ## 实验流程
 
+### Step 1: 训练模型
+
+```bash
+bash step1_run_experiment.sh
+```
+
+训练流程：
 ```
 [Step 1/9] 加载和分析数据
     ↓
@@ -36,8 +43,40 @@
     ↓
 [Step 8/9] 评估所有模型
     ↓
-[Step 9/9] 对比结果并生成可视化
+[Step 9/9] 保存结果到 results.json
 ```
+
+### Step 2: 多设置可视化（新版）
+
+```bash
+bash step2_run_multi_setting_visualization.sh
+```
+
+**功能特性**：
+- ✅ **跨Setting汇总**：自动聚合所有实验设置的模型（Setting1-sb, Setting1-ot, Setting1-vae, Setting2-sb_mlplus）
+- ✅ **动态子图布局**：根据模型数量自动调整可视化布局（1+N+1个子图）
+- ✅ **评估指标对比**：横向对比10个标准指标，红色边框高亮最佳模型
+- ✅ **独立输出目录**：可视化结果保存在独立的`visualizations/`目录
+
+**生成文件**：
+```
+visualizations/
+├── metrics_comparison.png/pdf/csv      # 10个评估指标的横向对比
+├── generation_comparison_phate.png/pdf # PHATE降维可视化
+└── generation_comparison_lmnn_pca.png/pdf # LMNN+PCA监督降维可视化
+```
+
+**对比指标**：
+1. Test Loss - 测试集损失
+2. Fréchet Distance - 生成分布与真实分布的差异
+3. MAE - 平均绝对误差
+4. PCC - Pearson相关系数
+5. Wasserstein Distance - Wasserstein距离
+6. MMD - Maximum Mean Discrepancy
+7. R² (mean) - R平方均值
+8. JS Divergence - JS散度
+9. Correlation Frobenius Diff - 相关矩阵Frobenius差异
+10. Correlation Structure Corr - 相关结构相关性
 
 **关键改进**（v2.0）:
 - ✅ Setting 2 数据量增加 2.5 倍，充分利用多时间点信息
@@ -69,81 +108,94 @@ SynthaticSCData/
 │   ├── sb_trainer.py           # SB 模型训练器（早停、检查点保存）
 │   ├── sb_evaluator.py         # 评估器（FD, MAE, PCC 等指标）
 │   └── __init__.py
-├── Analyser/                   # 分析工具（可选）
-├── run_experiment.py           # 主实验脚本
-├── test_pipeline.py            # 测试脚本
+├── Analyser/                   # 可视化和分析工具
+│   ├── multi_setting_visualizer.py         # 多设置可视化主类
+│   ├── multi_setting_visualizer_methods.py # 数据加载和模型生成
+│   ├── multi_setting_visualizer_viz.py     # 可视化方法
+│   └── embedding_learner.py                # 嵌入学习（可选）
+├── step1_run_experiment.py     # Step 1: 训练脚本
+├── step1_run_experiment.sh     # Step 1: Bash启动脚本
+├── step2_multi_setting_visualization.py  # Step 2: 可视化脚本
+├── step2_run_multi_setting_visualization.sh # Step 2: Bash启动脚本
 ├── README.md                   # 本文档
+├── VISUALIZATION_GUIDE.md      # 可视化系统详细指南
 └── SystemDesign.md             # 详细系统设计文档
 ```
 
 ## 快速开始
 
-### 安装依赖
+### 环境设置
 
 ```bash
-pip install torch scanpy anndata numpy pandas scipy matplotlib tqdm
+# 创建虚拟环境
+bash step0_setup_env.sh
+
+# 激活环境
+source .venv/bin/activate
+
+# 安装依赖
+pip install torch scanpy anndata numpy pandas scipy matplotlib tqdm phate metric-learn
 ```
 
-### 1. 测试流程（推荐首次运行）
+### 完整实验流程
+
+#### Step 1: 训练所有模型
 
 ```bash
-python test_pipeline.py
+bash step1_run_experiment.sh
 ```
 
-测试内容：
-- ✅ 加载 EMT 数据集（~53K cells）
-- ✅ HVG 选择和生物学划分验证
-- ✅ Setting 1/2 数据集创建
-- ✅ SB 模型创建和前向传播
+这将训练4个模型：
+- Setting1: SB, OT, VAE (仅边界点)
+- Setting2: SB_MLPlus (完整轨迹)
 
-### 2. 运行完整实验
+输出目录：
+```
+OUTPUTs/SynthaticSCData/
+├── EMT_Setting1/
+│   ├── checkpoints/
+│   │   ├── sb/best_model.pt
+│   │   ├── ot/best_model.pt
+│   │   └── vae/best_model.pt
+│   ├── experiment_config.yaml
+│   └── results.json
+└── EMT_Setting2/
+    ├── checkpoints/
+    │   └── sb_mlplus/best_model.pt
+    ├── experiment_config.yaml
+    └── results.json
+```
 
-**快速测试（~5分钟）**：
+#### Step 2: 生成跨设置可视化
+
 ```bash
-python run_experiment.py \
-    --n_hvg 50 \
-    --cells_per_timepoint 500 \
-    --epochs 10 \
-    --output_dir ./quick_test
+bash step2_run_multi_setting_visualization.sh
 ```
 
-**完整实验（~2-3小时）**：
+输出目录：
+```
+OUTPUTs/SynthaticSCData/visualizations/
+├── metrics_comparison.png          # 10个指标横向对比
+├── metrics_comparison.pdf
+├── metrics_comparison.csv          # 可用于进一步分析
+├── generation_comparison_phate.png # PHATE可视化
+├── generation_comparison_phate.pdf
+├── generation_comparison_lmnn_pca.png # LMNN+PCA可视化
+└── generation_comparison_lmnn_pca.pdf
+```
+
+### 查看结果
+
 ```bash
-python run_experiment.py \
-    --n_hvg 100 \
-    --cells_per_timepoint 2000 \
-    --epochs 100 \
-    --device cuda \
-    --output_dir ./outputs
+# 查看Setting1的评估结果
+cat OUTPUTs/SynthaticSCData/EMT_Setting1/results.json
+
+# 查看Setting2的评估结果
+cat OUTPUTs/SynthaticSCData/EMT_Setting2/results.json
+
+# 查看跨设置指标对比
+cat OUTPUTs/SynthaticSCData/visualizations/metrics_comparison.csv
 ```
-
-**命令行参数**：
-- `--file_path`: h5ad 文件路径（默认使用 EMT 数据）
-- `--n_hvg`: 高变基因数量（默认 100）
-- `--cells_per_timepoint`: Setting 1 每个时间点的细胞数（默认 2000）
-- `--batch_size`: 批次大小（默认 256）
-- `--epochs`: 训练轮数（默认 100）
-- `--lr`: 学习率（默认 5e-4）
-- `--device`: 设备（cuda 或 cpu）
-- `--output_dir`: 输出目录（默认 ./outputs）
-- `--seed`: 随机种子（默认 42）
-
-### 3. 查看结果
-
-实验完成后，查看输出目录：
-```bash
-# 查看结果摘要
-cat outputs/results.json
-
-# 查看对比图表
-# outputs/comparison.png
-```
-
-结果包含：
-- **Test Loss**: 测试集损失（越小越好）
-- **Frechet Distance**: 生成分布与真实分布的差异（越小越好）
-- **MAE**: 平均绝对误差（越小越好）
-- **PCC**: Pearson 相关系数（越大越好）
 
 ### 4. 使用自己的数据
 
@@ -217,48 +269,119 @@ python run_experiment.py --file_path YOUR_DATA.h5ad
 
 ## 输出结果
 
-```
-outputs/
-├── setting1/                      # Setting 1 结果
-│   ├── best_model.pt
-│   ├── final_model.pt
-│   └── training_history.json
-├── setting2/                      # Setting 2 结果
-│   ├── best_model.pt
-│   ├── final_model.pt
-│   └── training_history.json
-├── results.json                   # 完整结果和对比
-└── comparison.png                 # 可视化对比图
+### 训练结果 (Step 1)
+
+每个setting的`results.json`包含所有模型的评估指标：
+
+```json
+{
+  "sb": {
+    "evaluation": {
+      "test_loss": 2152.51,
+      "frechet_distance": 290066.40,
+      "mae": 10.20,
+      "pcc": 0.59,
+      "wasserstein_distance": 6.61,
+      "mmd": 0.47,
+      "r2_mean": -2.52,
+      "js_divergence": 0.46,
+      "correlation_frobenius_diff": 15.67,
+      "correlation_structure_corr": -0.01
+    }
+  }
+}
 ```
 
-**预期结果**：Setting 2（完整轨迹）的泛化能力优于 Setting 1（仅边界）
-- Test Loss: Setting 2 < Setting 1
-- Frechet Distance: Setting 2 < Setting 1
-- MAE: Setting 2 < Setting 1
-- PCC: Setting 2 > Setting 1
+### 可视化结果 (Step 2)
+
+**指标对比图** (`metrics_comparison.png/pdf`):
+- 横向条形图显示所有模型在10个指标上的表现
+- 红色边框标记每个指标的最佳模型
+- CSV文件可用于进一步统计分析
+
+**生成质量可视化** (`generation_comparison_*.png/pdf`):
+- **PHATE嵌入**：基于流形学习的非线性降维，保留全局结构
+- **LMNN+PCA嵌入**：基于度量学习的监督降维，强调类别分离
+
+每个可视化包含：
+1. 所有原始数据的时间点分布
+2. 每个模型生成样本与原始数据的对比（N个子图）
+3. 目标时间点 + 所有模型的汇总对比
+
+**预期结果**：
+- Setting2-sb_mlplus（完整轨迹）应在多数指标上优于Setting1模型（仅边界）
+- 生成样本应与目标时间点的原始数据在嵌入空间中重叠
 
 ## 常见问题
 
+### 训练相关
+
 **Q: 训练时间过长怎么办？**
-- 减少 HVG：`--n_hvg 50`
-- 减少样本：`--cells_per_timepoint 1000`
-- 减少轮数：`--epochs 50`
+- 修改配置文件中的epochs参数
+- 使用GPU加速：确保`--device cuda`
+- 减少数据量（修改配置文件中的采样参数）
 
-**Q: 如何使用随机划分？**
-- 设置 `biology_split["train_val_column"] = "random"`
+**Q: 如何使用自己的数据？**
+- 准备h5ad格式的AnnData对象
+- 修改配置文件中的`data_source`部分
+- 确保包含时间标签和批次信息用于train/test划分
 
-**Q: 如何解释结果？**
-- 如果 Setting 2 所有指标都优于 Setting 1，说明中间时间点信息有助于学习动力学和提升泛化能力
+**Q: 如何调整模型架构？**
+- 修改配置文件中的`models`部分
+- 可调整hidden_dims, dropout, learning_rate等参数
 
-**Q: 内存不足怎么办？**
-- 减小批次：`--batch_size 128`
-- 减少 HVG 和样本数
+### 可视化相关
+
+**Q: 如何添加更多setting到可视化？**
+```bash
+python step2_multi_setting_visualization.py \
+    --config_paths \
+        path/to/Setting1/experiment_config.yaml \
+        path/to/Setting2/experiment_config.yaml \
+        path/to/Setting3/experiment_config.yaml \
+    --output_dir ./visualizations
+```
+
+**Q: 可视化内存不足怎么办？**
+- 减少`--n_samples_per_timepoint`参数（默认500）
+- 减少`--n_generate_per_model`参数（默认500）
+
+**Q: 如何解释可视化结果？**
+- **指标对比图**：红色边框表示该指标的最佳模型
+- **PHATE图**：生成样本应与目标时间点原始数据在流形上重叠
+- **LMNN+PCA图**：监督降维强调不同时间点的分离度
+
+**Q: 如何导出高分辨率图片？**
+- PDF文件已自动生成，适合论文使用
+- 可修改代码中的`dpi=300`参数提高分辨率
+
+## 版本更新
+
+### v2.1 (2024-11-15) - 多设置可视化系统
+- ✅ **新增**：跨设置模型汇总和对比可视化
+- ✅ **新增**：10个标准评估指标的横向对比图
+- ✅ **新增**：动态子图布局（根据模型数量自动调整）
+- ✅ **新增**：PHATE和LMNN+PCA两种降维可视化
+- ✅ **新增**：CSV格式指标导出，便于进一步分析
+- ✅ **改进**：独立的可视化输出目录
+- ✅ **改进**：模型命名格式：`Setting名-模型名`
+- ❌ **移除**：旧版单setting可视化系统
+
+### v2.0 (2024-11-10) - 多模型对比
+- ✅ Setting 2 数据量增加 2.5 倍
+- ✅ MLPlus 模型增强
+- ✅ 新增 OT 和 VAE 模型
+
+### v1.0 (2024-11-01) - 初始版本
+- ✅ 基础 Schrödinger Bridge 模型
+- ✅ Setting 1/2 对比实验
 
 ## 更多信息
 
-- 详细系统设计：参见 `SystemDesign.md`
-- 测试脚本：`test_pipeline.py`
-- 问题反馈：提交 Issue
+- **详细系统设计**：参见 `SystemDesign.md`
+- **可视化系统指南**：参见 `VISUALIZATION_GUIDE.md`
+- **配置文件示例**：参见 `configs/` 目录
+- **问题反馈**：提交 Issue
 
 ## 许可证
 
