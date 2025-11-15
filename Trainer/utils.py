@@ -57,13 +57,22 @@ def train_model(
             diffusion_coeff=arch_config['diffusion_coeff']
         ).to(device)
         
+        # Get optimizer and training parameters from config
+        optimizer_kwargs = train_config.get('optimizer_kwargs', {})
+        scheduler_config = train_config.get('scheduler', {})
+        grad_clip_config = train_config.get('gradient_clipping', {})
+        
         trainer = SBTrainer(
             model=model,
             train_loader=train_loader,
             test_loader=test_loader,
             learning_rate=train_config['learning_rate'],
             device=device,
-            output_dir=str(checkpoint_dir)
+            output_dir=str(checkpoint_dir),
+            weight_decay=optimizer_kwargs.get('weight_decay', 1e-5),
+            grad_clip_norm=grad_clip_config.get('max_norm', 5.0),
+            optimizer_kwargs=optimizer_kwargs,
+            scheduler_config=scheduler_config
         )
         
     elif model_name == 'sb_mlplus':
@@ -77,13 +86,22 @@ def train_model(
             diffusion_coeff=arch_config['diffusion_coeff']
         ).to(device)
         
+        # Get optimizer and training parameters from config
+        optimizer_kwargs = train_config.get('optimizer_kwargs', {})
+        scheduler_config = train_config.get('scheduler', {})
+        grad_clip_config = train_config.get('gradient_clipping', {})
+        
         trainer = SBTrainer(
             model=model,
             train_loader=train_loader,
             test_loader=test_loader,
             learning_rate=train_config['learning_rate'],
             device=device,
-            output_dir=str(checkpoint_dir)
+            output_dir=str(checkpoint_dir),
+            weight_decay=optimizer_kwargs.get('weight_decay', 1e-5),
+            grad_clip_norm=grad_clip_config.get('max_norm', 5.0),
+            optimizer_kwargs=optimizer_kwargs,
+            scheduler_config=scheduler_config
         )
         
     elif model_name == 'ot':
@@ -129,8 +147,16 @@ def train_model(
     
     # 训练
     logger.info(f"Training for {train_config['epochs']} epochs...")
+    
+    # Get early stopping patience from config
+    early_stopping_config = train_config.get('early_stopping', {})
+    patience = early_stopping_config.get('patience', 10)  # Default to 10 if not specified
+    
+    logger.info(f"Early stopping patience: {patience}")
+    
     history = trainer.train(
-        epochs=train_config['epochs']
+        epochs=train_config['epochs'],
+        early_stopping_patience=patience
     )
     
     # 评估

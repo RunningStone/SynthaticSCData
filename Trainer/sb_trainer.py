@@ -29,7 +29,9 @@ class SBTrainer:
         device: str = 'cuda',
         output_dir: str = './outputs',
         weight_decay: float = 1e-5,
-        grad_clip_norm: float = 5.0
+        grad_clip_norm: float = 5.0,
+        optimizer_kwargs: Optional[Dict] = None,
+        scheduler_config: Optional[Dict] = None
     ):
         """
         Args:
@@ -41,6 +43,8 @@ class SBTrainer:
             output_dir: Output directory for checkpoints
             weight_decay: Weight decay for regularization
             grad_clip_norm: Gradient clipping norm
+            optimizer_kwargs: Additional optimizer parameters (betas, eps, etc.)
+            scheduler_config: Scheduler configuration (type, parameters)
         """
         self.model = model.to(device)
         self.train_loader = train_loader
@@ -50,22 +54,52 @@ class SBTrainer:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.grad_clip_norm = grad_clip_norm
         
+        # Get optimizer kwargs with defaults
+        if optimizer_kwargs is None:
+            optimizer_kwargs = {}
+        
+        betas = optimizer_kwargs.get('betas', [0.9, 0.999])
+        eps = optimizer_kwargs.get('eps', 1e-8)
+        
         # Setup optimizer with weight decay
         self.optimizer = optim.AdamW(
             self.model.parameters(),
             lr=learning_rate,
             weight_decay=weight_decay,
-            betas=(0.9, 0.999)
+            betas=tuple(betas),
+            eps=eps
         )
         
-        # Learning rate scheduler
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer,
-            mode='min',
-            factor=0.5,
-            patience=10,
-            min_lr=1e-6
-        )
+        # Setup learning rate scheduler based on config
+        if scheduler_config is None:
+            scheduler_config = {}
+        
+        scheduler_type = scheduler_config.get('type', 'reduce_on_plateau')
+        
+        if scheduler_type == 'cosine':
+            T_max = scheduler_config.get('T_max', 200)
+            eta_min = scheduler_config.get('eta_min', 1e-6)
+            self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer,
+                T_max=T_max,
+                eta_min=eta_min
+            )
+            self.scheduler_type = 'cosine'
+        elif scheduler_type == 'reduce_on_plateau':
+            patience = scheduler_config.get('patience', 10)
+            factor = scheduler_config.get('factor', 0.5)
+            min_lr = scheduler_config.get('min_lr', 1e-6)
+            self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                self.optimizer,
+                mode='min',
+                factor=factor,
+                patience=patience,
+                min_lr=min_lr
+            )
+            self.scheduler_type = 'plateau'
+        else:
+            self.scheduler = None
+            self.scheduler_type = 'none'
         
         # Training history
         self.history = {
@@ -230,7 +264,11 @@ class SBTrainer:
             
             # Learning rate scheduler step
             prev_lr = self.optimizer.param_groups[0]['lr']
-            self.scheduler.step(test_loss)
+            if self.scheduler is not None:
+                if self.scheduler_type == 'plateau':
+                    self.scheduler.step(test_loss)
+                elif self.scheduler_type == 'cosine':
+                    self.scheduler.step()
             
             # Learning rate
             current_lr = self.optimizer.param_groups[0]['lr']
