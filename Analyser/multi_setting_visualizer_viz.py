@@ -12,7 +12,15 @@ from typing import Dict
 
 
 def create_dynamic_visualization(self, embedding_type: str = 'phate'):
-    """Create dynamic visualization with adaptive subplot layout"""
+    """
+    Create dynamic visualization with adaptive subplot layout
+    
+    Layout:
+    - Subplot 1: All original timepoints (for reference)
+    - Subplots 2-N+1: Target timepoint (7d) + each model's generation
+    
+    Note: Models generate from 0d → 7d (first to last timepoint)
+    """
     print("\n" + "="*80)
     print(f"Creating Dynamic Visualization ({embedding_type.upper()})")
     print("="*80)
@@ -23,8 +31,8 @@ def create_dynamic_visualization(self, embedding_type: str = 'phate'):
     model_names = sorted([k for k in embeddings.keys() if k != 'original'])
     n_models = len(model_names)
     
-    # Dynamic layout: 1 (all original) + n_models (original+each) + 1 (target+all)
-    total_subplots = 1 + n_models + 1
+    # Dynamic layout: 1 (all original) + n_models (target+each model)
+    total_subplots = 1 + n_models
     n_cols = min(4, total_subplots)
     n_rows = (total_subplots + n_cols - 1) // n_cols
     
@@ -35,13 +43,15 @@ def create_dynamic_visualization(self, embedding_type: str = 'phate'):
         axes = axes.flatten() if n_rows > 1 else axes
     
     time_colors_dark = plt.cm.tab10(np.linspace(0, 0.9, len(self.time_labels)))
-    time_colors_bright = plt.cm.Set1(np.linspace(0, 0.9, len(self.time_labels)))
     model_colors = plt.cm.Set2(np.linspace(0, 0.9, n_models))
     
-    last_time_idx = len(self.time_labels) - 1
+    # Get source and target timepoint indices
+    first_time_idx = 0  # Source: 0d
+    last_time_idx = len(self.time_labels) - 1  # Target: 7d
+    
     subplot_idx = 0
     
-    # Subplot 1: All original data
+    # ========== Subplot 1: All original data (for reference) ==========
     ax = axes[subplot_idx]
     for time_idx, time_label in enumerate(self.time_labels):
         mask = (self.y_original == time_idx)
@@ -55,46 +65,35 @@ def create_dynamic_visualization(self, embedding_type: str = 'phate'):
     ax.grid(alpha=0.3)
     subplot_idx += 1
     
-    # Subplots: Original + each model
+    # ========== Subplots 2-N+1: Target (7d) + each model's generation ==========
+    target_time_mask = (self.y_original == last_time_idx)
+    target_time_label = self.time_labels[last_time_idx]
+    
+    # 配色方案：粉红色表示真实数据，浅蓝色表示生成数据
+    real_color = '#FF69B4'      # 粉红色 (HotPink)
+    generated_color = '#87CEEB'  # 浅蓝色 (SkyBlue)
+    
     for model_idx, model_name in enumerate(model_names):
         ax = axes[subplot_idx]
         
-        for time_idx, time_label in enumerate(self.time_labels):
-            mask = (self.y_original == time_idx)
-            ax.scatter(original_emb[mask, 0], original_emb[mask, 1],
-                      c=[time_colors_dark[time_idx]], alpha=0.4, s=15, edgecolors='none')
+        # Plot target timepoint (7d) original data - 粉红色
+        ax.scatter(original_emb[target_time_mask, 0], original_emb[target_time_mask, 1],
+                  c=real_color, alpha=0.6, s=30, edgecolors='darkred', linewidths=0.8,
+                  label=f'{target_time_label} (real)', marker='o')
         
+        # Plot model's generated data - 浅蓝色
         gen_emb = embeddings[model_name]
         ax.scatter(gen_emb[:, 0], gen_emb[:, 1],
-                  c=[time_colors_bright[last_time_idx]], alpha=0.8, s=30,
-                  edgecolors='black', linewidths=0.5, label=f'{model_name} (gen)', marker='*')
+                  c=generated_color, alpha=0.7, s=45,
+                  edgecolors='darkblue', linewidths=0.8, 
+                  label=f'{model_name} (gen)', marker='*')
         
-        ax.set_title(f'Original + {model_name}\nGenerated', fontweight='bold', fontsize=10)
-        ax.legend(loc='best', fontsize=7, framealpha=0.9)
+        ax.set_title(f'{target_time_label} Real vs {model_name}', fontweight='bold', fontsize=11)
+        ax.legend(loc='best', fontsize=8, framealpha=0.9)
         ax.set_xlabel(f'{embedding_type.upper()} 1')
         ax.set_ylabel(f'{embedding_type.upper()} 2')
         ax.grid(alpha=0.3)
         subplot_idx += 1
-    
-    # Last subplot: Target timepoint + all models
-    ax = axes[subplot_idx]
-    last_time_mask = (self.y_original == last_time_idx)
-    ax.scatter(original_emb[last_time_mask, 0], original_emb[last_time_mask, 1],
-              c='gray', alpha=0.5, s=20, edgecolors='none',
-              label=f'{self.time_labels[last_time_idx]} (orig)')
-    
-    for model_idx, model_name in enumerate(model_names):
-        gen_emb = embeddings[model_name]
-        ax.scatter(gen_emb[:, 0], gen_emb[:, 1],
-                  c=[model_colors[model_idx]], alpha=0.7, s=30,
-                  edgecolors='black', linewidths=0.5, label=model_name, marker='*')
-    
-    ax.set_title(f'Target Timepoint\n(Original + All Models)', fontweight='bold', fontsize=12)
-    ax.legend(loc='best', fontsize=7, framealpha=0.9)
-    ax.set_xlabel(f'{embedding_type.upper()} 1')
-    ax.set_ylabel(f'{embedding_type.upper()} 2')
-    ax.grid(alpha=0.3)
-    subplot_idx += 1
     
     # Hide unused subplots
     for idx in range(subplot_idx, len(axes)):
@@ -111,6 +110,9 @@ def create_dynamic_visualization(self, embedding_type: str = 'phate'):
     print(f"✓ Saved PDF to: {output_path_pdf}")
     
     plt.close()
+    
+    print(f"\n  Layout: 1 (all timepoints) + {n_models} (target vs each model)")
+    print(f"  Source: {self.time_labels[first_time_idx]} → Target: {target_time_label}")
     print("="*80)
 
 
