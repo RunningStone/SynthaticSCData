@@ -103,7 +103,8 @@ def load_models_and_generate(self, model_configs: Dict[str, Dict], n_generate_pe
         elif model_type == 'batch_ot':
             model = BatchOTModel(**model_kwargs).to(self.device)
         
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        # PyTorch 2.6+ requires weights_only=False for checkpoints with numpy objects
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
         model.load_state_dict(checkpoint['model_state_dict'])
         
         if model_type == 'vae' and hasattr(model, 'normalization_fitted'):

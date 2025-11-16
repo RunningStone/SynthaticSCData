@@ -136,6 +136,7 @@ python step2_multi_setting_visualization.py \
 - ✅ 自动从checkpoint加载模型
 - ✅ 自动读取evaluation metrics
 - ✅ 支持多GPU和CPU模式
+- ✅ 兼容PyTorch 2.6+（使用`weights_only=False`加载checkpoint）
 
 ## 注意事项
 
