@@ -6,10 +6,10 @@
 # Experiment metadata
 experiment:
   name: "EMT_Cook_Setting2_AllTimepoints"
-  description: "Train MLPlus SB model on all time points (0d, 8h, 1d, 3d, 7d)"
-  version: "1.0"
-  author: "Your Name"
-  date: "2024-11-14"
+  description: "Train models on all time points (0d, 8h, 1d, 3d, 7d) - MLPlus SB, Batch OT, and CVAE"
+  version: "2.0"
+  author: "Shi Pan"
+  date: "2024-11-16"
 
 # Configuration file references
 configs:
@@ -41,6 +41,20 @@ models_to_train:
       training:
         epochs: 200
         batch_size: 64
+  
+  - name: "batch_ot"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 128
+  
+  - name: "vae"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200  
+        batch_size: 128
 
 # Experiment-specific settings
 settings:

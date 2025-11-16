@@ -15,11 +15,13 @@ from typing import Dict, Any, Optional
 from Model import (
     SchrodingerBridgeModel,
     MLPlus_SchrodingerBridgeModel,
-    OptimalTransportModel
+    OptimalTransportModel,
+    BatchOTModel
 )
 from Model.c_vae_model import ConditionalVAEModel
 from .sb_trainer import SBTrainer
 from .unified_trainer import UnifiedTrainer
+from .batch_ot_trainer import BatchOTTrainer
 from .sb_evaluator import Evaluator
 
 
@@ -149,6 +151,35 @@ def train_model(
             device=device,
             model_type='vae',
             output_dir=str(checkpoint_dir)
+        )
+        
+    elif model_name == 'batch_ot':
+        # Get number of timepoints from time_labels
+        n_timepoints = len(time_labels)
+        
+        model = BatchOTModel(
+            dimension=dimension,
+            n_timepoints=n_timepoints,
+            time_labels=time_labels,
+            hidden_dims=arch_config['hidden_dims'],
+            activation=arch_config['activation'],
+            dropout=arch_config['dropout'],
+            use_residual=arch_config.get('use_residual', True)
+        ).to(device)
+        
+        # Get optimizer and training parameters from config
+        optimizer_kwargs = train_config.get('optimizer_kwargs', {})
+        grad_clip_config = train_config.get('gradient_clipping', {})
+        
+        trainer = BatchOTTrainer(
+            model=model,
+            train_loader=train_loader,
+            test_loader=test_loader,
+            learning_rate=train_config['learning_rate'],
+            device=device,
+            output_dir=str(checkpoint_dir),
+            weight_decay=optimizer_kwargs.get('weight_decay', 1e-5),
+            grad_clip_norm=grad_clip_config.get('max_norm', 5.0)
         )
     else:
         raise ValueError(f"Unknown model: {model_name}")

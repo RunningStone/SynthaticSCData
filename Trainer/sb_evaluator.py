@@ -109,8 +109,8 @@ class Evaluator:
         # SB models: compute_loss(x_t, x_next, t, dt) where t is float
         # Conditional models: compute_loss(x_source, x_target, t_source, t_target) where t are indices
         # OT/VAE models: compute_loss(x_source, x_target)
-        is_sb_model = model_name == 'sb'
-        is_conditional = False  # Reserved for future conditional models
+        is_sb_model = model_name in ['sb', 'sb_mlplus']
+        is_conditional = model_name in ['batch_ot']  # batch_ot needs time indices
         is_ot_or_vae = model_name in ['ot', 'vae']
         
         for i in range(len(sorted_times) - 1):

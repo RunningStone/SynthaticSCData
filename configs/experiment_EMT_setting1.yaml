@@ -8,7 +8,7 @@ experiment:
   name: "EMT_Cook_Setting1_Boundary"
   description: "Train SB, OT, and VAE models on boundary time points (0d, 7d) only"
   version: "1.0"
-  author: "Your Name"
+  author: "Shi Pan"
   date: "2024-11-14"
 
 # Configuration file references
