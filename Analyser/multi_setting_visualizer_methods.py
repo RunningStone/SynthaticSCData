@@ -70,7 +70,7 @@ def load_models_and_generate(self, model_configs: Dict[str, Dict], n_generate_pe
     print("Loading Models and Generating Samples")
     print("="*80)
     
-    from Model import SchrodingerBridgeModel, MLPlus_SchrodingerBridgeModel, OptimalTransportModel, ConditionalVAEModel
+    from Model import SchrodingerBridgeModel, MLPlus_SchrodingerBridgeModel, OptimalTransportModel, ConditionalVAEModel, BatchOTModel
     
     first_time_idx = 0
     last_time_idx = len(self.time_labels) - 1
@@ -100,6 +100,8 @@ def load_models_and_generate(self, model_configs: Dict[str, Dict], n_generate_pe
             model = OptimalTransportModel(**model_kwargs).to(self.device)
         elif model_type == 'vae':
             model = ConditionalVAEModel(**model_kwargs).to(self.device)
+        elif model_type == 'batch_ot':
+            model = BatchOTModel(**model_kwargs).to(self.device)
         
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -124,6 +126,11 @@ def load_models_and_generate(self, model_configs: Dict[str, Dict], n_generate_pe
             # ConditionalVAE needs time indices
             with torch.no_grad():
                 trajectory = model.generate_trajectory(source_tensor, time_grid, first_time_idx, last_time_idx, method='deterministic')
+                generated = trajectory[:, -1, :]
+        elif model_type == 'batch_ot':
+            # BatchOT uses sequential generation through multiple OT models
+            with torch.no_grad():
+                trajectory = model.generate_trajectory(source_tensor, time_grid, method='deterministic')
                 generated = trajectory[:, -1, :]
         
         generated_np = generated.cpu().numpy()

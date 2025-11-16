@@ -200,7 +200,18 @@ def train_model(
     
     # 评估
     logger.info("Evaluating model...")
-    evaluator = Evaluator(device=device, model_name=model_name)
+    
+    # Get start/end timepoints from config if specified
+    eval_config = config.get('evaluation', {})
+    start_timepoint = eval_config.get('start_timepoint', None)
+    end_timepoint = eval_config.get('end_timepoint', None)
+    
+    evaluator = Evaluator(
+        device=device, 
+        model_name=model_name,
+        start_timepoint=start_timepoint,
+        end_timepoint=end_timepoint
+    )
     results = evaluator.evaluate(
         model=model,
         test_loader=test_loader,

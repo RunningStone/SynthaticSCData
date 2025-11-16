@@ -28,7 +28,8 @@ from Model import (
     SchrodingerBridgeModel,
     MLPlus_SchrodingerBridgeModel,
     OptimalTransportModel,
-    ConditionalVAEModel
+    ConditionalVAEModel,
+    BatchOTModel
 )
 
 
@@ -98,7 +99,12 @@ class MultiSettingVisualizer:
             
             for model_name in models_config.keys():
                 model_arch = models_config[model_name]['architecture']
-                checkpoint_path = output_dir / checkpoint_subdir / model_name / 'best_model.pt'
+                
+                # BatchOT uses final_model.pt instead of best_model.pt
+                if model_name == 'batch_ot':
+                    checkpoint_path = output_dir / checkpoint_subdir / model_name / 'final_model.pt'
+                else:
+                    checkpoint_path = output_dir / checkpoint_subdir / model_name / 'best_model.pt'
                 
                 model_kwargs = {'dimension': n_hvg}
                 
@@ -139,6 +145,18 @@ class MultiSettingVisualizer:
                         'mmd_weight': model_arch.get('mmd_weight', 1.0),
                         'mmd_kernel': model_arch.get('mmd_kernel', 'rbf'),
                         'mmd_bandwidth': model_arch.get('mmd_bandwidth', 1.0)
+                    })
+                elif model_name == 'batch_ot':
+                    # BatchOT needs n_timepoints and time_labels
+                    time_labels_order = config['data_source']['time_labels_order']
+                    n_timepoints = len(time_labels_order)
+                    model_kwargs.update({
+                        'n_timepoints': n_timepoints,
+                        'time_labels': time_labels_order,
+                        'hidden_dims': model_arch['hidden_dims'],
+                        'activation': model_arch['activation'],
+                        'dropout': model_arch['dropout'],
+                        'use_residual': model_arch.get('use_residual', True)
                     })
                 
                 if checkpoint_path.exists():

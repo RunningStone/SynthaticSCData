@@ -20,14 +20,18 @@ class Evaluator:
     Evaluator for SB models
     """
     
-    def __init__(self, device: str = 'cuda', model_name: str = 'sb'):
+    def __init__(self, device: str = 'cuda', model_name: str = 'sb', start_timepoint: str = None, end_timepoint: str = None):
         """
         Args:
             device: Device for evaluation
             model_name: Model type ('sb', 'ot', 'vae') for proper loss computation
+            start_timepoint: Optional start timepoint label (e.g., '0d'). If None, uses first timepoint.
+            end_timepoint: Optional end timepoint label (e.g., '3d_rm'). If None, uses last timepoint.
         """
         self.device = device
         self.model_name = model_name.lower()
+        self.start_timepoint = start_timepoint
+        self.end_timepoint = end_timepoint
     
     def evaluate(
         self,
@@ -42,12 +46,15 @@ class Evaluator:
         Args:
             model: Trained model
             test_loader: Test data loader
-            time_labels: List of time label names
+            time_labels: List of time label names (e.g., ['0d', '8h', '1d', '3d', '7d'])
             model_name: Override model type if different from init
             
         Returns:
             Dictionary of evaluation metrics
         """
+        # Store time_labels for use in helper methods
+        self.time_labels = time_labels
+        
         # Use provided model_name or fall back to instance variable
         current_model_name = (model_name or self.model_name).lower()
         model.eval()
@@ -178,9 +185,9 @@ class Evaluator:
             if len(sorted_times) < 2:
                 return float('nan')
             
-            # Use first and last timepoints
-            t_start = sorted_times[0]
-            t_end = sorted_times[-1]
+            # Use configured or default start/end timepoints
+            t_start = sorted_times[0] if self.start_timepoint is None else self._find_timepoint_index(sorted_times, time_to_indices, self.start_timepoint)
+            t_end = sorted_times[-1] if self.end_timepoint is None else self._find_timepoint_index(sorted_times, time_to_indices, self.end_timepoint)
             
             indices_start = time_to_indices[t_start]
             indices_end = time_to_indices[t_end]
@@ -243,8 +250,9 @@ class Evaluator:
             if len(sorted_times) < 2:
                 return float('nan')
             
-            t_start = sorted_times[0]
-            t_end = sorted_times[-1]
+            # Use configured or default start/end timepoints
+            t_start = sorted_times[0] if self.start_timepoint is None else self._find_timepoint_index(sorted_times, time_to_indices, self.start_timepoint)
+            t_end = sorted_times[-1] if self.end_timepoint is None else self._find_timepoint_index(sorted_times, time_to_indices, self.end_timepoint)
             
             indices_start = time_to_indices[t_start]
             indices_end = time_to_indices[t_end]
@@ -294,8 +302,9 @@ class Evaluator:
             if len(sorted_times) < 2:
                 return float('nan')
             
-            t_start = sorted_times[0]
-            t_end = sorted_times[-1]
+            # Use configured or default start/end timepoints
+            t_start = sorted_times[0] if self.start_timepoint is None else self._find_timepoint_index(sorted_times, time_to_indices, self.start_timepoint)
+            t_end = sorted_times[-1] if self.end_timepoint is None else self._find_timepoint_index(sorted_times, time_to_indices, self.end_timepoint)
             
             indices_start = time_to_indices[t_start]
             indices_end = time_to_indices[t_end]
@@ -362,9 +371,9 @@ class Evaluator:
                     'correlation_structure_corr': float('nan')
                 }
             
-            # Get start and end timepoints
-            t_start = sorted_times[0]
-            t_end = sorted_times[-1]
+            # Get configured or default start and end timepoints
+            t_start = sorted_times[0] if self.start_timepoint is None else self._find_timepoint_index(sorted_times, time_to_indices, self.start_timepoint)
+            t_end = sorted_times[-1] if self.end_timepoint is None else self._find_timepoint_index(sorted_times, time_to_indices, self.end_timepoint)
             
             indices_start = time_to_indices[t_start]
             indices_end = time_to_indices[t_end]
@@ -483,3 +492,38 @@ class Evaluator:
         plt.close()
         
         print(f"✓ Comprehensive comparison plot saved to: {save_path}")
+    
+    def _find_timepoint_index(self, sorted_times: List, time_to_indices: Dict, timepoint_label: str) -> int:
+        """
+        Find the index corresponding to a timepoint label using time_labels_order.
+        
+        Args:
+            sorted_times: List of sorted time indices (integers 0, 1, 2, ...)
+            time_to_indices: Dictionary mapping time indices to sample indices
+            timepoint_label: Timepoint label to find (e.g., '0d', '3d_rm')
+            
+        Returns:
+            Time index corresponding to the label
+            
+        Note:
+            Uses self.time_labels (set in evaluate()) which contains the ordered list
+            of timepoint labels from time_labels_order in the data config.
+            The index in time_labels corresponds to the integer label in y.
+        """
+        # Find the position of timepoint_label in time_labels
+        # This gives us the integer index used in the dataset
+        try:
+            target_idx = self.time_labels.index(timepoint_label)
+        except ValueError:
+            raise ValueError(
+                f"Timepoint label '{timepoint_label}' not found in time_labels: {self.time_labels}"
+            )
+        
+        # Check if this index exists in sorted_times (i.e., in the current batch)
+        if target_idx not in sorted_times:
+            raise ValueError(
+                f"Timepoint '{timepoint_label}' (index {target_idx}) not present in current data. "
+                f"Available indices: {sorted_times}"
+            )
+        
+        return target_idx

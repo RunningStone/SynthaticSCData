@@ -81,11 +81,77 @@ setting2:
   # - "per_timepoint": Each time point has cells_per_timepoint samples
   balance_strategy: "total"
 
-# Setting 3: Start-Middle-End trajectory learning
-# Tests hypothesis: giving middle point (7d) helps interpolation even if not all points provided
+# Setting 3: Start-Early-Peak trajectory learning (Forward EMT only)
+# Similar to setting2 but only uses 3 key timepoints in forward EMT
 setting3:
-  name: "Start-Middle-End"
-  description: "Use start (0d), middle (7d), and end (3d_rm) to test if middle point helps"
+  name: "Start-Early-Peak (Forward EMT)"
+  description: "Use start (0d), early response (8h), and peak EMT (7d) - 3 timepoints"
+  
+  # Time points to include (must be in time_labels_order)
+  # 0d: baseline state
+  # 8h: early EMT response
+  # 7d: peak EMT state
+  time_points: ["0d", "8h", "7d"]
+  
+  # Total cells or cells per time point
+  # Will be calculated by step0_calculate_data_split_params.py
+  total_cells: 6000  # Placeholder: should match setting1/2 for fair comparison
+  cells_per_timepoint: null  # If null, use total_cells; if set, use this instead
+  
+  # Validation
+  min_cells_required: 1000  # Error if any time point has fewer cells
+  
+  # Balance strategy
+  balance_strategy: "total"  # Distribute total_cells evenly across 3 timepoints
+
+# Setting 4: Full trajectory with reversal (Extended setting2)
+# All 8 timepoints including forward EMT and reversal after stimulus removal
+setting4:
+  name: "Full Trajectory with Reversal"
+  description: "Use all 8 timepoints: forward EMT (0d→7d) and reversal (7d→3d_rm)"
+  
+  # Time points to include (must be in time_labels_order)
+  # Forward: 0d → 8h → 1d → 3d → 7d
+  # Reversal: 7d → 8h_rm → 1d_rm → 3d_rm
+  time_points: ["0d", "8h", "1d", "3d", "7d", "8h_rm", "1d_rm", "3d_rm"]
+  
+  # Total cells or cells per time point
+  # Will be calculated by step0_calculate_data_split_params.py
+  total_cells: 8000  # Placeholder: 8 timepoints, ~1000 cells each
+  cells_per_timepoint: null  # If null, use total_cells; if set, use this instead
+  
+  # Validation
+  min_cells_required: 1000  # Error if any time point has fewer cells
+  
+  # Balance strategy
+  balance_strategy: "total"  # Distribute total_cells evenly across 8 timepoints
+
+# Setting 5: Boundary with reversal endpoint (Extended setting1)
+# Start and reversal endpoint only
+setting5:
+  name: "Boundary with Reversal Endpoint"
+  description: "Use only start (0d) and reversal endpoint (3d_rm) - 2 timepoints"
+  
+  # Time points to include (must be in time_labels_order)
+  # 0d: baseline state
+  # 3d_rm: reversal state after stimulus removal (endpoint)
+  time_points: ["0d", "3d_rm"]
+  
+  # Number of cells per time point (default, can be overridden in experiment config)
+  # Will be calculated by step0_calculate_data_split_params.py
+  cells_per_timepoint: 3000  # Placeholder: 2 timepoints × 3000 = 6000 total
+  
+  # Validation: check if sufficient cells exist
+  min_cells_required: 1000  # Error if any time point has fewer cells
+  
+  # Balance strategy
+  balance_strategy: "per_timepoint"  # Each time point has cells_per_timepoint samples
+
+# Setting 6: Start-Peak-Reversal trajectory learning
+# Tests hypothesis: giving peak (7d) helps interpolation to reversal endpoint
+setting6:
+  name: "Start-Peak-Reversal"
+  description: "Use start (0d), peak EMT (7d), and reversal endpoint (3d_rm) - 3 timepoints"
   
   # Time points to include (must be in time_labels_order)
   # 0d: baseline state
