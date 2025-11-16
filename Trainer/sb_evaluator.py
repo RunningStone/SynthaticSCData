@@ -20,30 +20,36 @@ class Evaluator:
     Evaluator for SB models
     """
     
-    def __init__(self, device: str = 'cuda'):
+    def __init__(self, device: str = 'cuda', model_name: str = 'sb'):
         """
         Args:
             device: Device for evaluation
+            model_name: Model type ('sb', 'ot', 'vae') for proper loss computation
         """
         self.device = device
+        self.model_name = model_name.lower()
     
     def evaluate(
         self,
         model: torch.nn.Module,
         test_loader: DataLoader,
-        time_labels: List[str]
+        time_labels: List[str],
+        model_name: str = None
     ) -> Dict:
         """
         Evaluate model on test set
         
         Args:
-            model: Trained SB model
+            model: Trained model
             test_loader: Test data loader
             time_labels: List of time label names
+            model_name: Override model type if different from init
             
         Returns:
             Dictionary of evaluation metrics
         """
+        # Use provided model_name or fall back to instance variable
+        current_model_name = (model_name or self.model_name).lower()
         model.eval()
         
         # Collect all data (no torch.no_grad here, as generate_trajectory needs gradients)
@@ -62,13 +68,13 @@ class Evaluator:
         all_X.requires_grad_(True)
         
         # Compute all metrics (all need gradients for SB model)
-        test_loss = self._compute_test_loss(model, all_X, all_y)
-        frechet_distance = self._compute_frechet_distance(model, all_X, all_y)
-        mae = self._compute_mae(model, all_X, all_y)
-        pcc = self._compute_pcc(model, all_X, all_y)
+        test_loss = self._compute_test_loss(model, all_X, all_y, current_model_name)
+        frechet_distance = self._compute_frechet_distance(model, all_X, all_y, current_model_name)
+        mae = self._compute_mae(model, all_X, all_y, current_model_name)
+        pcc = self._compute_pcc(model, all_X, all_y, current_model_name)
         
         # Compute advanced metrics (Wasserstein, MMD, R², JS, Correlation)
-        advanced_metrics = self._compute_advanced_metrics(model, all_X, all_y)
+        advanced_metrics = self._compute_advanced_metrics(model, all_X, all_y, current_model_name)
         
         results = {
             'test_loss': test_loss,
@@ -87,7 +93,8 @@ class Evaluator:
         self,
         model: torch.nn.Module,
         X: torch.Tensor,
-        y: torch.Tensor
+        y: torch.Tensor,
+        model_name: str
     ) -> float:
         """Compute test loss"""
         total_loss = 0.0
@@ -98,12 +105,13 @@ class Evaluator:
         
         sorted_times = sorted(time_to_indices.keys())
         
-        # Check if model is SB (has time-dependent loss) or OT/VAE (direct mapping)
-        # SB models have compute_loss(x_t, x_next, t, dt)
-        # OT/VAE models have compute_loss(x_source, x_target)
-        import inspect
-        loss_signature = inspect.signature(model.compute_loss)
-        is_time_dependent = len(loss_signature.parameters) > 2
+        # Determine model type from model_name parameter
+        # SB models: compute_loss(x_t, x_next, t, dt) where t is float
+        # Conditional models: compute_loss(x_source, x_target, t_source, t_target) where t are indices
+        # OT/VAE models: compute_loss(x_source, x_target)
+        is_sb_model = model_name == 'sb'
+        is_conditional = False  # Reserved for future conditional models
+        is_ot_or_vae = model_name in ['ot', 'vae']
         
         for i in range(len(sorted_times) - 1):
             t_curr = sorted_times[i]
@@ -119,14 +127,31 @@ class Evaluator:
             x_t = X[indices_curr[:n_pairs_curr]]
             x_next = X[indices_next[:n_pairs_curr]]
             
-            if is_time_dependent:
-                # SB model: needs time parameters
+            if is_sb_model:
+                # SB model: needs normalized time parameters
                 t = torch.full((n_pairs_curr,), float(t_curr) / len(sorted_times), device=self.device)
                 dt = 1.0 / len(sorted_times)
                 loss = model.compute_loss(x_t, x_next, t, dt)
-            else:
+            elif is_conditional:
+                # Conditional model: pass time indices
+                t_source_tensor = torch.full((n_pairs_curr,), t_curr, dtype=torch.long, device=self.device)
+                t_target_tensor = torch.full((n_pairs_curr,), t_next, dtype=torch.long, device=self.device)
+                loss_output = model.compute_loss(x_t, x_next, t_source_tensor, t_target_tensor)
+                # Handle both single loss and (loss, loss_dict) returns
+                if isinstance(loss_output, tuple):
+                    loss, _ = loss_output
+                else:
+                    loss = loss_output
+            elif is_ot_or_vae:
                 # OT/VAE model: direct mapping
-                loss = model.compute_loss(x_t, x_next)
+                loss_output = model.compute_loss(x_t, x_next)
+                # Handle both single loss and (loss, loss_dict) returns
+                if isinstance(loss_output, tuple):
+                    loss, _ = loss_output
+                else:
+                    loss = loss_output
+            else:
+                raise ValueError(f"Unknown model type: {model_name}")
             
             total_loss += loss.detach().item() * n_pairs_curr
             n_pairs += n_pairs_curr
@@ -137,7 +162,8 @@ class Evaluator:
         self,
         model: torch.nn.Module,
         X: torch.Tensor,
-        y: torch.Tensor
+        y: torch.Tensor,
+        model_name: str
     ) -> float:
         """
         Compute Frechet Distance between generated and real distributions
@@ -170,7 +196,13 @@ class Evaluator:
                 device=self.device
             )
             
-            trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
+            # Call generate_trajectory with appropriate parameters based on model type
+            if model_name == 'vae':
+                # ConditionalVAE needs time indices
+                trajectory = model.generate_trajectory(x_start, time_grid, int(t_start), int(t_end), method='deterministic')
+            else:
+                # SB and OT models don't need time indices
+                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
             x_gen_end = trajectory[:, -1, :]
             
             # Compute statistics (detach tensors before converting to numpy)
@@ -199,7 +231,8 @@ class Evaluator:
         self,
         model: torch.nn.Module,
         X: torch.Tensor,
-        y: torch.Tensor
+        y: torch.Tensor,
+        model_name: str
     ) -> float:
         """Compute Mean Absolute Error"""
         try:
@@ -226,7 +259,13 @@ class Evaluator:
                 device=self.device
             )
             
-            trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
+            # Call generate_trajectory with appropriate parameters based on model type
+            if model_name == 'vae':
+                # ConditionalVAE needs time indices
+                trajectory = model.generate_trajectory(x_start, time_grid, int(t_start), int(t_end), method='deterministic')
+            else:
+                # SB and OT models don't need time indices
+                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
             x_gen_end = trajectory[:, -1, :]
             
             # Match sizes
@@ -243,7 +282,8 @@ class Evaluator:
         self,
         model: torch.nn.Module,
         X: torch.Tensor,
-        y: torch.Tensor
+        y: torch.Tensor,
+        model_name: str
     ) -> float:
         """Compute Pearson Correlation Coefficient"""
         try:
@@ -270,7 +310,13 @@ class Evaluator:
                 device=self.device
             )
             
-            trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
+            # Call generate_trajectory with appropriate parameters based on model type
+            if model_name == 'vae':
+                # ConditionalVAE needs time indices
+                trajectory = model.generate_trajectory(x_start, time_grid, int(t_start), int(t_end), method='deterministic')
+            else:
+                # SB and OT models don't need time indices
+                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
             x_gen_end = trajectory[:, -1, :]
             
             # Match sizes
@@ -292,7 +338,8 @@ class Evaluator:
         self,
         model: torch.nn.Module,
         X: torch.Tensor,
-        y: torch.Tensor
+        y: torch.Tensor,
+        model_name: str
     ) -> Dict:
         """
         Compute advanced metrics: Wasserstein, MMD, R² per gene, JS divergence, 
@@ -333,7 +380,13 @@ class Evaluator:
                 device=self.device
             )
             
-            trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
+            # Call generate_trajectory with appropriate parameters based on model type
+            if model_name == 'vae':
+                # ConditionalVAE needs time indices
+                trajectory = model.generate_trajectory(x_start, time_grid, int(t_start), int(t_end), method='deterministic')
+            else:
+                # SB and OT models don't need time indices
+                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
             x_gen_end = trajectory[:, -1, :]
             
             # Match sizes

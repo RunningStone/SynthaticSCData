@@ -5,13 +5,14 @@ Model architecture for trajectory prediction
 - OptimalTransportModel: Optimal transport based model
 - RegularizedOTModel: OT model with gradient penalty
 - VAEModel: Variational autoencoder model
-- ConditionalVAEModel: Conditional VAE for source->target mapping
+- ConditionalVAEModel: Time-conditional VAE for cell state transition
 """
 
 from .sb_model import SchrodingerBridgeModel
 from .sb_model_mlplus import MLPlus_SchrodingerBridgeModel
 from .ot_model import OptimalTransportModel, RegularizedOTModel
-from .vae_model import VAEModel, ConditionalVAEModel
+from .vae_model import VAEModel
+from .c_vae_model import ConditionalVAEModel
 
 __all__ = [
     "SchrodingerBridgeModel",

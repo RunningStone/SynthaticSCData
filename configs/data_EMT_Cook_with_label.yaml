@@ -1,0 +1,111 @@
+# ============================================================================
+# Data Configuration: EMT Cook Dataset with Removal Labels
+# ============================================================================
+# This file defines the data source, label mappings, and setting-specific
+# configurations for training/testing data splits.
+# 
+# New features:
+# - Includes removal timepoints (8h_rm, 1d_rm, 3d_rm)
+# - Modified train/test split (Mix1+Mix3+Mix4 for train, Mix2 for test)
+# - New setting3 for start-middle-end trajectory learning
+
+# Raw data file information
+data_source:
+  file_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/DATAs/EMT/2024_12_04_Cook_emt_dataset_with_removal.h5ad"
+  obs_time_column: "Ground_truth"  # Column name in adata.obs for time labels
+  
+  # Time label order (cells with labels not in this list will be filtered out with warning)
+  # Forward EMT: 0d → 8h → 1d → 3d → 7d
+  # Reversal: 7d → 8h_rm → 1d_rm → 3d_rm (after removing stimulus)
+  time_labels_order: ["0d", "8h", "1d", "3d", "7d", "8h_rm", "1d_rm", "3d_rm"]
+  
+  # Time intervals between consecutive time points (in hours)
+  time_intervals:
+    # Forward EMT progression
+    "0d-8h": 8
+    "8h-1d": 16
+    "1d-3d": 48
+    "3d-7d": 96
+    # Reversal after stimulus removal
+    "7d-8h_rm": 8
+    "8h_rm-1d_rm": 16
+    "1d_rm-3d_rm": 48
+  
+  # Feature selection
+  n_hvg: 1000  # Number of highly variable genes to select
+
+# Biology-based train/test split
+# Modified to use Mix1+Mix3+Mix4 for training, Mix2 for testing
+biology_split:
+  column_name: "batches"  # Column in adata.obs for split
+  train_values: ["Mix1", "Mix3", "Mix4"]  # Values for training set
+  test_values: ["Mix2"]  # Values for test set
+  train_ratio: 0.8  # Only used if column_name is null (random split)
+
+# Setting 1: Boundary time points only (first and last)
+setting1:
+  name: "Boundary Only"
+  description: "Use only the first and last time points for interpolation (0d and 3d_rm)"
+  
+  # Time points to include (must be in time_labels_order)
+  time_points: ["0d", "3d_rm"]
+  
+  # Number of cells per time point (default, can be overridden in experiment config)
+  # Will be calculated by step0_calculate_data_split_params.py
+  cells_per_timepoint: 2000  # Placeholder: 2 timepoints × 2000 = 4000 total
+  
+  # Validation: check if sufficient cells exist
+  min_cells_required: 1000  # Error if any time point has fewer cells
+  
+  # Balance strategy
+  balance_strategy: "per_timepoint"  # Each time point has cells_per_timepoint samples
+
+# Setting 2: All time points
+setting2:
+  name: "All Time Points"
+  description: "Use all available time points for full trajectory learning"
+  
+  # Time points to include (must be in time_labels_order)
+  time_points: ["0d", "8h", "1d", "3d", "7d", "8h_rm", "1d_rm", "3d_rm"]
+  
+  # Total cells or cells per time point
+  # Will be calculated by step0_calculate_data_split_params.py
+  total_cells: 4000  # Placeholder: Total number of cells across all time points
+  cells_per_timepoint: null  # If null, use total_cells; if set, use this instead
+  
+  # Validation
+  min_cells_required: 1000  # Error if any time point has fewer cells
+  
+  # Balance strategy: "total" or "per_timepoint"
+  # - "total": Distribute total_cells evenly across time points
+  # - "per_timepoint": Each time point has cells_per_timepoint samples
+  balance_strategy: "total"
+
+# Setting 3: Start-Middle-End trajectory learning
+# Tests hypothesis: giving middle point (7d) helps interpolation even if not all points provided
+setting3:
+  name: "Start-Middle-End"
+  description: "Use start (0d), middle (7d), and end (3d_rm) to test if middle point helps"
+  
+  # Time points to include (must be in time_labels_order)
+  # 0d: baseline state
+  # 7d: peak EMT state (middle point)
+  # 3d_rm: reversal state after stimulus removal (endpoint)
+  time_points: ["0d", "7d", "3d_rm"]
+  
+  # Total cells or cells per time point
+  # Will be calculated by step0_calculate_data_split_params.py
+  total_cells: 6000  # Placeholder: should match setting1/2 for fair comparison
+  cells_per_timepoint: null  # If null, use total_cells; if set, use this instead
+  
+  # Validation
+  min_cells_required: 1000  # Error if any time point has fewer cells
+  
+  # Balance strategy
+  balance_strategy: "total"  # Distribute total_cells evenly across 3 timepoints
+
+# Data validation settings
+validation:
+  check_all_timepoints_present: true  # Ensure both train and test have all time points
+  warn_on_filtered_labels: true  # Warn if any cells are filtered due to unlisted labels
+  check_sufficient_cells: true  # Check min_cells_required for each time point

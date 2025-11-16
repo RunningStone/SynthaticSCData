@@ -116,9 +116,14 @@ def load_models_and_generate(self, model_configs: Dict[str, Dict], n_generate_pe
         if model_type in ['sb', 'sb_mlplus']:
             trajectory = model.generate_trajectory(source_tensor, time_grid, method='deterministic')
             generated = trajectory[:, -1, :].detach()
-        elif model_type in ['ot', 'vae']:
+        elif model_type == 'ot':
             with torch.no_grad():
                 trajectory = model.generate_trajectory(source_tensor, time_grid, method='deterministic')
+                generated = trajectory[:, -1, :]
+        elif model_type == 'vae':
+            # ConditionalVAE needs time indices
+            with torch.no_grad():
+                trajectory = model.generate_trajectory(source_tensor, time_grid, first_time_idx, last_time_idx, method='deterministic')
                 generated = trajectory[:, -1, :]
         
         generated_np = generated.cpu().numpy()

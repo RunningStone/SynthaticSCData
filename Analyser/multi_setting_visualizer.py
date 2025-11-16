@@ -126,12 +126,19 @@ class MultiSettingVisualizer:
                         'use_residual': model_arch.get('use_residual', True)
                     })
                 elif model_name == 'vae':
+                    # ConditionalVAE needs n_timepoints parameter
+                    n_timepoints = len(config['data_source']['time_labels_order'])
                     model_kwargs.update({
+                        'n_timepoints': n_timepoints,
                         'hidden_dims': model_arch['hidden_dims'],
                         'latent_dim': model_arch['latent_dim'],
                         'activation': model_arch['activation'],
                         'dropout': model_arch['dropout'],
-                        'beta': model_arch['beta']
+                        'beta': model_arch['beta'],
+                        'time_embedding_dim': model_arch.get('time_embedding_dim', 64),
+                        'mmd_weight': model_arch.get('mmd_weight', 1.0),
+                        'mmd_kernel': model_arch.get('mmd_kernel', 'rbf'),
+                        'mmd_bandwidth': model_arch.get('mmd_bandwidth', 1.0)
                     })
                 
                 if checkpoint_path.exists():

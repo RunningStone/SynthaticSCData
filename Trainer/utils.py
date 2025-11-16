@@ -15,9 +15,9 @@ from typing import Dict, Any, Optional
 from Model import (
     SchrodingerBridgeModel,
     MLPlus_SchrodingerBridgeModel,
-    OptimalTransportModel,
-    ConditionalVAEModel
+    OptimalTransportModel
 )
+from Model.c_vae_model import ConditionalVAEModel
 from .sb_trainer import SBTrainer
 from .unified_trainer import UnifiedTrainer
 from .sb_evaluator import Evaluator
@@ -124,13 +124,21 @@ def train_model(
         )
         
     elif model_name == 'vae':
+        # Get number of timepoints from time_labels
+        n_timepoints = len(time_labels)
+        
         model = ConditionalVAEModel(
             dimension=dimension,
+            n_timepoints=n_timepoints,
             hidden_dims=arch_config['hidden_dims'],
             latent_dim=arch_config['latent_dim'],
+            time_embedding_dim=arch_config.get('time_embedding_dim', 64),
             activation=arch_config['activation'],
             dropout=arch_config['dropout'],
-            beta=arch_config['beta']
+            beta=arch_config['beta'],
+            mmd_weight=arch_config.get('mmd_weight', 1.0),
+            mmd_kernel=arch_config.get('mmd_kernel', 'rbf'),
+            mmd_bandwidth=arch_config.get('mmd_bandwidth', 1.0)
         ).to(device)
         
         trainer = UnifiedTrainer(
@@ -161,11 +169,12 @@ def train_model(
     
     # 评估
     logger.info("Evaluating model...")
-    evaluator = Evaluator(device=device)
+    evaluator = Evaluator(device=device, model_name=model_name)
     results = evaluator.evaluate(
         model=model,
         test_loader=test_loader,
-        time_labels=time_labels
+        time_labels=time_labels,
+        model_name=model_name
     )
     
     logger.info(f"✓ {model_name.upper()} training complete")

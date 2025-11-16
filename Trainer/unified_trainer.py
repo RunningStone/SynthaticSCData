@@ -126,7 +126,23 @@ class UnifiedTrainer:
             x_target = X[indices_end]
             
             # Compute loss
-            loss = self.model.compute_loss(x_source, x_target)
+            # Check if model needs time indices (conditional models)
+            import inspect
+            loss_signature = inspect.signature(self.model.compute_loss)
+            if len(loss_signature.parameters) > 2:
+                # Conditional model: pass time indices
+                t_source_tensor = torch.full((n_pairs,), t_start, dtype=torch.long, device=self.device)
+                t_target_tensor = torch.full((n_pairs,), t_end, dtype=torch.long, device=self.device)
+                loss_output = self.model.compute_loss(x_source, x_target, t_source_tensor, t_target_tensor)
+                
+                # Handle both single loss and (loss, loss_dict) returns
+                if isinstance(loss_output, tuple):
+                    loss, loss_dict = loss_output
+                else:
+                    loss = loss_output
+            else:
+                # Non-conditional model: standard interface
+                loss = self.model.compute_loss(x_source, x_target)
             
             # Backward pass
             self.optimizer.zero_grad()
@@ -174,7 +190,23 @@ class UnifiedTrainer:
                 x_target = X[indices_end[:n_pairs]]
                 
                 # Compute loss
-                loss = self.model.compute_loss(x_source, x_target)
+                # Check if model needs time indices (conditional models)
+                import inspect
+                loss_signature = inspect.signature(self.model.compute_loss)
+                if len(loss_signature.parameters) > 2:
+                    # Conditional model: pass time indices
+                    t_source_tensor = torch.full((n_pairs,), t_start, dtype=torch.long, device=self.device)
+                    t_target_tensor = torch.full((n_pairs,), t_end, dtype=torch.long, device=self.device)
+                    loss_output = self.model.compute_loss(x_source, x_target, t_source_tensor, t_target_tensor)
+                    
+                    # Handle both single loss and (loss, loss_dict) returns
+                    if isinstance(loss_output, tuple):
+                        loss, _ = loss_output
+                    else:
+                        loss = loss_output
+                else:
+                    # Non-conditional model: standard interface
+                    loss = self.model.compute_loss(x_source, x_target)
                 
                 total_loss += loss.item()
                 n_batches += 1
