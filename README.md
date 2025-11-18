@@ -2,196 +2,106 @@
 
 ## 项目概述
 
-本项目基于真实时间序列单细胞 RNA-seq 数据，使用 Schrödinger Bridge (SB) 模型对比研究**完整动力学轨迹**与**仅边界信息**对模型泛化能力的影响。
+本项目基于真实时间序列单细胞数据，研究细胞状态转换动力学建模中的一个核心问题：在学习细胞状态转换时，完整的时间轨迹信息是否比仅有起止点信息更有价值。项目使用EMT数据集，包含前向EMT过程和刺激移除后的逆转过程，通过配置化的实验框架系统地对比不同时间点采样策略对模型泛化能力的影响。
 
 ### 核心研究问题
 
-**学习完整动力学轨迹是否优于仅学习起止点分布？**
+在相同样本总量下，使用完整时间轨迹训练的模型是否能比仅使用边界点训练的模型学到更准确的状态转换规律？这个问题的答案将影响实验设计和数据收集策略。
 
-### 实验设计
+### 实验设计理念
 
-对比两种训练策略：
-- **Setting 1（仅边界）**：仅使用起止两个时间点训练（如 0d → 7d）
-  - 数据量: 2 个时间点 × 2000 cells = 4000 cells
-  - 模型: 基础 SchrodingerBridgeModel
-- **Setting 2（完整轨迹）**：使用所有中间时间点训练（如 0d → 8h → 1d → 3d → 7d）
-  - 数据量: 5 个时间点 × 2000 cells = **10000 cells** ⬆️
-  - 模型: **MLPlus_SchrodingerBridgeModel**（增强版）
+项目采用模块化配置系统，支持灵活定义不同的实验设置。每个设置通过YAML配置文件指定时间点选择、数据采样策略和模型配置。系统自动处理数据加载、模型训练、评估和可视化的完整流程。当前实现包含六个预定义设置，覆盖从简单边界插值到复杂轨迹学习的多种场景。
 ## 实验流程
 
 ### Step 1: 训练模型
 
+系统通过配置文件驱动的方式运行实验。用户指定实验配置文件后，系统自动完成数据加载、模型训练和评估的完整流程。每个实验配置引用三个基础配置文件：数据配置定义数据源和时间点选择，模型配置定义网络架构和训练参数，分析器配置定义评估指标和可视化方法。
+
+运行单个实验设置的命令格式为：
+
 ```bash
-bash step1_run_experiment.sh
+bash step1_run_experiment_EMT.sh experiment_EMT_setting1.yaml
 ```
 
-训练流程：
-```
-[Step 1/9] 加载和分析数据
-    ↓
-[Step 2/9] 准备 Setting 1 数据 (0d → 7d)
-    ↓
-[Step 3/9] 准备 Setting 2 数据 (0d → 8h → 1d → 3d → 7d)
-    ↓
-[Step 4/9] 训练 Setting 1 - Schrödinger Bridge
-    ↓
-[Step 5/9] 训练 Setting 1 - Optimal Transport
-    ↓
-[Step 6/9] 训练 Setting 1 - Conditional VAE
-    ↓
-[Step 7/9] 训练 Setting 2 - MLPlus Schrödinger Bridge
-    ↓
-[Step 8/9] 评估所有模型
-    ↓
-[Step 9/9] 保存结果到 results.json
-```
+系统首先加载并验证配置，确保所有引用的时间点存在且有足够的细胞数量。然后根据配置中指定的采样策略准备训练和测试数据。对于每个启用的模型，系统创建相应的训练器实例，执行训练循环并保存最佳检查点。训练过程包含早停机制和学习率调度，自动优化收敛性能。最后系统在测试集上评估所有训练好的模型，计算十个标准指标并保存结果到JSON文件。
 
-### Step 2: 多设置可视化（新版）
+### Step 2: 跨设置可视化对比
+
+可视化系统支持同时加载多个实验设置的结果，进行横向对比分析。系统接收多个实验配置文件路径作为输入，自动聚合所有训练好的模型，生成统一的对比图表。
+
+运行可视化的命令格式为：
 
 ```bash
 bash step2_run_multi_setting_visualization.sh
 ```
 
-**功能特性**：
-- ✅ **跨Setting汇总**：自动聚合所有实验设置的模型（Setting1-sb, Setting1-ot, Setting1-vae, Setting2-sb_mlplus）
-- ✅ **动态子图布局**：根据模型数量自动调整可视化布局（1+N+1个子图）
-- ✅ **评估指标对比**：横向对比10个标准指标，红色边框高亮最佳模型
-- ✅ **独立输出目录**：可视化结果保存在独立的`visualizations/`目录
+该脚本默认对比Setting1和Setting2的结果。用户也可以通过命令行参数指定任意组合的配置文件进行对比。
 
-**生成文件**：
-```
-visualizations/
-├── metrics_comparison.png/pdf/csv      # 10个评估指标的横向对比
-├── generation_comparison_phate.png/pdf # PHATE降维可视化
-└── generation_comparison_lmnn_pca.png/pdf # LMNN+PCA监督降维可视化
-```
+可视化流程包含四个主要步骤。首先从每个设置的测试集中采样数据，确保所有时间点都有足够的样本用于对比。然后加载所有训练好的模型检查点，使用源时间点的数据生成目标时间点的预测。接着计算两种降维嵌入：PHATE嵌入保留全局流形结构，LMNN+PCA嵌入强调时间点分离。最后生成三类输出文件：指标对比图以条形图形式展示所有模型在十个评估指标上的表现，PHATE和LMNN+PCA可视化图展示生成数据与真实数据在低维空间的分布对比，CSV文件记录详细的数值结果供进一步分析。
 
-**对比指标**：
-1. Test Loss - 测试集损失
-2. Fréchet Distance - 生成分布与真实分布的差异
-3. MAE - 平均绝对误差
-4. PCC - Pearson相关系数
-5. Wasserstein Distance - Wasserstein距离
-6. MMD - Maximum Mean Discrepancy
-7. R² (mean) - R平方均值
-8. JS Divergence - JS散度
-9. Correlation Frobenius Diff - 相关矩阵Frobenius差异
-10. Correlation Structure Corr - 相关结构相关性
+系统计算的十个标准指标包括测试集损失、Fréchet距离、平均绝对误差、Pearson相关系数、Wasserstein距离、最大均值差异、R平方均值、JS散度、相关矩阵Frobenius差异和相关结构相关性。这些指标从不同角度量化模型的预测质量和泛化能力。
 
-**关键改进**（v2.0）:
-- ✅ Setting 2 数据量增加 2.5 倍，充分利用多时间点信息
-- ✅ MLPlus 模型：多尺度时间编码 + 残差连接 + LayerNorm
-- ✅ 保留旧的总量平衡策略作为可选项
+## 模型架构
 
-### 模型
+项目实现了五种生成模型用于细胞状态转换学习。Schrödinger Bridge模型是核心，通过学习时间依赖的漂移场来描述细胞状态演化。基础SB模型使用双势函数网络参数化漂移场，每个势函数由四层MLP实现，隐藏层维度为512。MLPlus增强版本针对多时间点场景进行了优化，引入多尺度时间编码使用10个可学习频率捕捉不同时间尺度的动力学，采用4个残差块提高梯度稳定性，参数量约470万。
 
-- **SchrodingerBridgeModel**: 基础 SB 模型，适用于简单的边界学习
-- **MLPlus_SchrodingerBridgeModel**: 增强版 SB 模型，专为多时间点设计
-  - 多尺度时间嵌入（10 个可学习频率）
-  - 4 个残差块（梯度稳定性）
-  - Layer Normalization
-  - 参数量: ~4.7M（基础版 ~2.7M）
+Optimal Transport模型学习从初始分布到目标分布的确定性映射，通过最小化Wasserstein-2距离实现。Conditional VAE模型采用变分自编码器框架，编码器将起始状态和时间条件映射到潜在空间，解码器重构目标状态。Batch OT模型针对多时间点场景设计，学习多个连续时间段的OT映射，推理时顺序应用这些映射并在离散状态间插值。
+
+所有模型使用统一的训练框架，包含AdamW优化器、学习率调度、梯度裁剪和早停机制。训练过程自动保存最佳检查点，支持从中断点恢复训练。
 
 ## 项目结构
 
-```
-SynthaticSCData/
-├── Data/                       # 数据加载和处理
-│   ├── data_loader.py          # 真实数据加载、HVG选择、生物学划分
-│   ├── dataset_builder.py      # PyTorch Dataset 和 DataLoader 构建
-│   └── __init__.py
-├── Model/                      # 模型定义
-│   ├── sb_model.py             # Schrödinger Bridge 基础模型
-│   ├── sb_model_mlplus.py      # MLPlus 增强模型（继承基础模型）
-│   └── __init__.py
-├── Trainer/                    # 训练和评估
-│   ├── sb_trainer.py           # SB 模型训练器（早停、检查点保存）
-│   ├── sb_evaluator.py         # 评估器（FD, MAE, PCC 等指标）
-│   └── __init__.py
-├── Analyser/                   # 可视化和分析工具
-│   ├── multi_setting_visualizer.py         # 多设置可视化主类
-│   ├── multi_setting_visualizer_methods.py # 数据加载和模型生成
-│   ├── multi_setting_visualizer_viz.py     # 可视化方法
-│   └── embedding_learner.py                # 嵌入学习（可选）
-├── step1_run_experiment.py     # Step 1: 训练脚本
-├── step1_run_experiment.sh     # Step 1: Bash启动脚本
-├── step2_multi_setting_visualization.py  # Step 2: 可视化脚本
-├── step2_run_multi_setting_visualization.sh # Step 2: Bash启动脚本
-├── README.md                   # 本文档
-├── VISUALIZATION_GUIDE.md      # 可视化系统详细指南
-└── SystemDesign.md             # 详细系统设计文档
-```
+项目采用模块化设计，代码组织清晰且易于扩展。Data模块负责数据加载和预处理，包含RealDataLoader类处理h5ad文件读取、HVG筛选和训练测试划分，ConfigLoader类实现配置文件的加载和合并。Model模块定义所有生成模型的网络架构，每个模型类实现统一的接口包括forward方法和compute_loss方法。Trainer模块提供训练和评估功能，SBTrainer处理Schrödinger Bridge模型的训练，UnifiedTrainer处理OT和VAE模型，BatchOTTrainer处理批量OT模型，Evaluator类计算所有评估指标。Analyser模块实现跨设置的可视化对比，MultiSettingVisualizer类协调整个可视化流程，包含数据采样、模型加载、降维嵌入和图表生成。
+
+configs目录包含所有配置文件，数据配置定义数据源和时间点选择，模型配置定义网络架构和训练参数，实验配置组合这些基础配置并指定要训练的模型。每个实验设置对应一个独立的实验配置文件。
+
+step1_run_experiment.py是训练的主入口，通过命令行参数接收配置文件路径。step2_multi_setting_visualization.py是可视化的主入口，支持同时对比多个实验设置。两个bash脚本提供便捷的启动方式，自动激活虚拟环境并传递参数。
 
 ## 快速开始
 
 ### 环境设置
 
+项目使用Python虚拟环境管理依赖。运行环境设置脚本创建虚拟环境并安装所有必需的包，包括PyTorch、Scanpy、AnnData和可视化库。
+
 ```bash
-# 创建虚拟环境
 bash step0_setup_env.sh
-
-# 激活环境
 source .venv/bin/activate
-
-# 安装依赖
-pip install torch scanpy anndata numpy pandas scipy matplotlib tqdm phate metric-learn
 ```
 
-### 完整实验流程
+### 运行单个实验设置
 
-#### Step 1: 训练所有模型
+每个实验设置对应一个配置文件。使用bash脚本指定配置文件名即可运行完整的训练和评估流程。系统自动处理数据加载、模型训练、指标计算和结果保存。
 
 ```bash
-bash step1_run_experiment.sh
+# 运行Setting 1（边界点）
+bash step1_run_experiment_EMT.sh experiment_EMT_setting1.yaml
+
+# 运行Setting 2（所有前向时间点）
+bash step1_run_experiment_EMT.sh experiment_EMT_setting2.yaml
+
+# 运行其他设置
+bash step1_run_experiment_EMT.sh experiment_EMT_setting3.yaml
 ```
 
-这将训练4个模型：
-- Setting1: SB, OT, VAE (仅边界点)
-- Setting2: SB_MLPlus (完整轨迹)
+每个设置的结果保存在独立的输出目录，包含模型检查点、训练历史、评估指标和日志文件。目录结构为OUTPUTs/SynthaticSCData/EMT_SettingX，其中X是设置编号。
 
-输出目录：
-```
-OUTPUTs/SynthaticSCData/
-├── EMT_Setting1/
-│   ├── checkpoints/
-│   │   ├── sb/best_model.pt
-│   │   ├── ot/best_model.pt
-│   │   └── vae/best_model.pt
-│   ├── experiment_config.yaml
-│   └── results.json
-└── EMT_Setting2/
-    ├── checkpoints/
-    │   └── sb_mlplus/best_model.pt
-    ├── experiment_config.yaml
-    └── results.json
-```
+### 跨设置可视化对比
 
-#### Step 2: 生成跨设置可视化
+可视化脚本支持同时加载多个实验设置的结果进行横向对比。默认脚本对比Setting1和Setting2，用户也可以通过修改脚本指定任意组合的设置。
 
 ```bash
 bash step2_run_multi_setting_visualization.sh
 ```
 
-输出目录：
-```
-OUTPUTs/SynthaticSCData/visualizations/
-├── metrics_comparison.png          # 10个指标横向对比
-├── metrics_comparison.pdf
-├── metrics_comparison.csv          # 可用于进一步分析
-├── generation_comparison_phate.png # PHATE可视化
-├── generation_comparison_phate.pdf
-├── generation_comparison_lmnn_pca.png # LMNN+PCA可视化
-└── generation_comparison_lmnn_pca.pdf
-```
+可视化结果保存在独立的visualizations目录，包含指标对比条形图、PHATE降维可视化、LMNN+PCA降维可视化和CSV格式的详细数值结果。这些文件可直接用于论文撰写和进一步分析。
 
-### 查看结果
+### 查看和分析结果
+
+每个实验设置的results.json文件包含所有训练好的模型的完整评估指标。可视化目录的CSV文件提供跨设置的指标汇总，便于进行统计分析和性能对比。
 
 ```bash
-# 查看Setting1的评估结果
+# 查看某个设置的结果
 cat OUTPUTs/SynthaticSCData/EMT_Setting1/results.json
-
-# 查看Setting2的评估结果
-cat OUTPUTs/SynthaticSCData/EMT_Setting2/results.json
 
 # 查看跨设置指标对比
 cat OUTPUTs/SynthaticSCData/visualizations/metrics_comparison.csv
