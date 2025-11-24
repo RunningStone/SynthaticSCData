@@ -108,9 +108,12 @@ sb_mlplus:
       max_norm: 5.0  # Match old experiment
 
 # Batch Optimal Transport Model (for Setting 2)
+# Note: Contains 7 separate OT models (one per time transition)
+# Reduced hidden_dims to balance total parameter count
 batch_ot:
   architecture:
-    hidden_dims: [1536, 1536, 1536, 1536]  # Same as OT model
+    hidden_dims: [512, 512, 512]  # Reduced from [1536, 1536, 1536, 1536]
+    # Rationale: 7 models × ~1.5M params/model ≈ 10.5M total (comparable to other models)
     activation: "relu"
     dropout: 0.1
     use_residual: true

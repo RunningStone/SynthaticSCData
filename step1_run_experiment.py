@@ -19,20 +19,27 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run Setting 1 experiment (boundary time points)
-  python run_experiment_from_config.py experiment_EMT_setting1.yaml
+  # Part1 (Forward EMT only)
+  python step1_run_experiment.py experiment_EMT_Part1_setting1.yaml
+  python step1_run_experiment.py experiment_EMT_Part1_setting2.yaml
+  python step1_run_experiment.py experiment_EMT_Part1_setting3.yaml
   
-  # Run Setting 2 experiment (all time points)
-  python run_experiment_from_config.py experiment_EMT_setting2.yaml
+  # Part2 (With Reversal)
+  python step1_run_experiment.py experiment_EMT_Part2_setting1.yaml
+  python step1_run_experiment.py experiment_EMT_Part2_setting2.yaml
+  python step1_run_experiment.py experiment_EMT_Part2_setting3.yaml
   
   # Specify custom config directory
-  python run_experiment_from_config.py experiment_EMT_setting1.yaml --config_dir my_configs
+  python step1_run_experiment.py experiment_EMT_Part1_setting1.yaml --config_dir my_configs
+  
+  # Override output directory
+  python step1_run_experiment.py experiment_EMT_Part1_setting1.yaml --output_dir /custom/path
         """
     )
     parser.add_argument(
         'config_file',
         type=str,
-        help='Experiment configuration file (e.g., experiment_EMT_setting1.yaml)'
+        help='Experiment configuration file (e.g., experiment_EMT_Part1_setting1.yaml)'
     )
     parser.add_argument(
         '--config_dir',

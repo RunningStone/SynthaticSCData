@@ -22,15 +22,15 @@ data_setting: "setting1"  # Use setting1 from data config
 
 # Data sampling override (experiment-specific)
 # Override the default sampling parameters from data config
+# Auto-updated from step0_calculate_data_split_params.py results
 data_sampling_override:
-  cells_per_timepoint: 3000  # Maximum safe sampling for fair comparison
-  # Setting1: 2 timepoints × 3000 = 6000 total samples
+  cells_per_timepoint: 4487  # Updated: 2024-11-18
+  # Setting1: 2 timepoints × 4,487 = 8,974 total samples
   # 
-  # Rationale for 3000/timepoint:
-  # - Train set has ~3400 cells for 0d (bottleneck), ~4000 for 7d
-  # - 3000 is 88% of 0d capacity, leaving safety margin
-  # - Maximizes data usage while ensuring balanced sampling
-  # - Matches Setting2 total (6000) for fair model comparison
+  # Rationale:
+  # - Bottleneck: 0d with 4,487 available cells (100.0% usage)
+  # - Fair comparison: Group1 (setting1,2,3) all use 8,974 total samples
+  # - Sufficient for convergence: each category has ≥1000 samples
 
 # Models to train for this experiment
 models_to_train:
@@ -71,7 +71,7 @@ settings:
     dtype: "float16"  # Options: float16, bfloat16
   
   # Output directory
-  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/EMT_Setting1"
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/EMT_Part1_Setting1"
   
   # Subdirectories
   subdirs:

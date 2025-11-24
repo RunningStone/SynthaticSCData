@@ -207,8 +207,11 @@ class Evaluator:
             if model_name == 'vae':
                 # ConditionalVAE needs time indices
                 trajectory = model.generate_trajectory(x_start, time_grid, int(t_start), int(t_end), method='deterministic')
+            elif model_name in ['sb', 'sb_mlplus']:
+                # SB models support create_graph parameter for memory efficiency
+                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic', create_graph=False)
             else:
-                # SB and OT models don't need time indices
+                # OT and other models
                 trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
             x_gen_end = trajectory[:, -1, :]
             
@@ -271,8 +274,11 @@ class Evaluator:
             if model_name == 'vae':
                 # ConditionalVAE needs time indices
                 trajectory = model.generate_trajectory(x_start, time_grid, int(t_start), int(t_end), method='deterministic')
+            elif model_name in ['sb', 'sb_mlplus']:
+                # SB models support create_graph parameter for memory efficiency
+                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic', create_graph=False)
             else:
-                # SB and OT models don't need time indices
+                # OT and other models
                 trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
             x_gen_end = trajectory[:, -1, :]
             
@@ -323,8 +329,11 @@ class Evaluator:
             if model_name == 'vae':
                 # ConditionalVAE needs time indices
                 trajectory = model.generate_trajectory(x_start, time_grid, int(t_start), int(t_end), method='deterministic')
+            elif model_name in ['sb', 'sb_mlplus']:
+                # SB models support create_graph parameter for memory efficiency
+                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic', create_graph=False)
             else:
-                # SB and OT models don't need time indices
+                # OT and other models
                 trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
             x_gen_end = trajectory[:, -1, :]
             
@@ -393,8 +402,11 @@ class Evaluator:
             if model_name == 'vae':
                 # ConditionalVAE needs time indices
                 trajectory = model.generate_trajectory(x_start, time_grid, int(t_start), int(t_end), method='deterministic')
+            elif model_name in ['sb', 'sb_mlplus']:
+                # SB models support create_graph parameter for memory efficiency
+                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic', create_graph=False)
             else:
-                # SB and OT models don't need time indices
+                # OT and other models
                 trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
             x_gen_end = trajectory[:, -1, :]
             
@@ -527,3 +539,87 @@ class Evaluator:
             )
         
         return target_idx
+    
+    def generate_samples_for_visualization(
+        self,
+        model: torch.nn.Module,
+        test_loader: DataLoader,
+        time_labels: List[str],
+        model_name: str = None
+    ) -> Dict:
+        """
+        生成用于可视化的样本数据
+        
+        Args:
+            model: 训练好的模型
+            test_loader: 测试数据加载器
+            time_labels: 时间标签列表
+            model_name: 模型名称
+            
+        Returns:
+            包含真实数据和生成数据的字典
+        """
+        self.time_labels = time_labels
+        current_model_name = (model_name or self.model_name).lower()
+        model.eval()
+        
+        # 收集所有测试数据
+        all_X = []
+        all_y = []
+        
+        for X, y in test_loader:
+            all_X.append(X)
+            all_y.append(y)
+        
+        all_X = torch.cat(all_X, dim=0).to(self.device)
+        all_y = torch.cat(all_y, dim=0).to(self.device)
+        all_X.requires_grad_(True)
+        
+        # 获取时间点信息
+        unique_times = torch.unique(all_y)
+        time_to_indices = {t.item(): (all_y == t).nonzero(as_tuple=True)[0] for t in unique_times}
+        sorted_times = sorted(time_to_indices.keys())
+        
+        if len(sorted_times) < 2:
+            return {
+                'real_data': all_X.detach().cpu().numpy(),
+                'real_labels': all_y.detach().cpu().numpy(),
+                'generated_data': None,
+                'time_labels': time_labels
+            }
+        
+        # 使用配置的起点和终点
+        t_start = sorted_times[0] if self.start_timepoint is None else self._find_timepoint_index(sorted_times, time_to_indices, self.start_timepoint)
+        t_end = sorted_times[-1] if self.end_timepoint is None else self._find_timepoint_index(sorted_times, time_to_indices, self.end_timepoint)
+        
+        indices_start = time_to_indices[t_start]
+        x_start = all_X[indices_start]
+        
+        # 生成轨迹
+        time_grid = torch.linspace(
+            float(t_start) / len(sorted_times),
+            float(t_end) / len(sorted_times),
+            steps=10,
+            device=self.device
+        )
+        
+        # 根据模型类型生成轨迹
+        if current_model_name == 'vae':
+            trajectory = model.generate_trajectory(x_start, time_grid, int(t_start), int(t_end), method='deterministic')
+        elif current_model_name in ['sb', 'sb_mlplus']:
+            trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic', create_graph=False)
+        else:
+            trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
+        
+        x_gen_end = trajectory[:, -1, :]
+        
+        # 返回数据
+        return {
+            'real_data': all_X.detach().cpu().numpy(),
+            'real_labels': all_y.detach().cpu().numpy(),
+            'generated_data': x_gen_end.detach().cpu().numpy(),
+            'start_indices': indices_start.cpu().numpy(),
+            'time_labels': time_labels,
+            'start_timepoint': t_start,
+            'end_timepoint': t_end
+        }

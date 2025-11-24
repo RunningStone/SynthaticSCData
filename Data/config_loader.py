@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from .data_loader import RealDataLoader
+from .interpolated_data_loader import InterpolatedDataLoader
 
 
 class ConfigLoader:
@@ -130,6 +131,7 @@ def create_data_loader_from_config(config: Dict[str, Any], logger: logging.Logge
     
     data_source = config['data_source']
     biology_split = config['biology_split']
+    setting_config = config['data_setting']
     
     logger.info("="*70)
     logger.info("Creating Data Loader from Configuration")
@@ -153,15 +155,32 @@ def create_data_loader_from_config(config: Dict[str, Any], logger: logging.Logge
             "test": biology_split['test_values']
         }
     
-    loader = RealDataLoader(
-        file_path=data_source['file_path'],
-        n_hvg=data_source['n_hvg'],
-        obs_time_column=data_source['obs_time_column'],
-        time_labels=data_source['time_labels_order'],
-        time_label_order=data_source['time_labels_order'],
-        biology_split=split_config,
-        random_seed=config['settings']['seed']
-    )
+    # Check if this is an interpolated data setting
+    interpolation_params = setting_config.get('interpolation_params')
+    
+    if interpolation_params:
+        logger.info("Using InterpolatedDataLoader for interpolated data generation")
+        loader = InterpolatedDataLoader(
+            file_path=data_source['file_path'],
+            n_hvg=data_source['n_hvg'],
+            obs_time_column=data_source['obs_time_column'],
+            time_labels=data_source['time_labels_order'],
+            time_label_order=data_source['time_labels_order'],
+            biology_split=split_config,
+            random_seed=config['settings']['seed'],
+            interpolation_params=interpolation_params
+        )
+    else:
+        logger.info("Using RealDataLoader for standard data loading")
+        loader = RealDataLoader(
+            file_path=data_source['file_path'],
+            n_hvg=data_source['n_hvg'],
+            obs_time_column=data_source['obs_time_column'],
+            time_labels=data_source['time_labels_order'],
+            time_label_order=data_source['time_labels_order'],
+            biology_split=split_config,
+            random_seed=config['settings']['seed']
+        )
     
     return loader
 

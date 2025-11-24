@@ -157,13 +157,16 @@ class SchrodingerBridgeModel(nn.Module):
         xt = torch.cat([x, t_emb], dim=-1)
         return self.backward_potential(xt)
     
-    def compute_drift(self, x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+    def compute_drift(self, x: torch.Tensor, t: torch.Tensor, create_graph: bool = True) -> torch.Tensor:
         """
         Compute drift field b(x, t) = -D ∇[φ(x, t) + ψ(x, t)].
         
         Args:
             x: State (batch_size, d)
             t: Time (batch_size,) or scalar
+            create_graph: If True, create computation graph for gradients (needed for training).
+                         If False, only compute gradient values (for inference, saves memory).
+                         Default: True (preserves training behavior)
             
         Returns:
             drift: Drift field (batch_size, d)
@@ -179,29 +182,32 @@ class SchrodingerBridgeModel(nn.Module):
         grad = torch.autograd.grad(
             total_potential.sum(),
             x,
-            create_graph=True
+            create_graph=create_graph
         )[0]
         
         return -self.D * grad
     
-    def forward(self, x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, t: torch.Tensor, create_graph: bool = True) -> torch.Tensor:
         """
         Forward pass returns drift field.
         
         Args:
             x: State (batch_size, d)
             t: Time (batch_size,) or scalar
+            create_graph: If True, create computation graph for gradients.
+                         Default: True (preserves training behavior)
             
         Returns:
             drift: (batch_size, d)
         """
-        return self.compute_drift(x, t)
+        return self.compute_drift(x, t, create_graph=create_graph)
     
     def generate_trajectory(
         self,
         x_0: torch.Tensor,
         time_grid: torch.Tensor,
-        method: str = 'euler'
+        method: str = 'euler',
+        create_graph: bool = False
     ) -> torch.Tensor:
         """
         Generate trajectory by solving SDE with learned drift.
@@ -210,6 +216,8 @@ class SchrodingerBridgeModel(nn.Module):
             x_0: Initial state (batch_size, d)
             time_grid: Time points (n_time,)
             method: Integration method ('euler' or 'deterministic')
+            create_graph: If True, create computation graph for gradients.
+                         Default: False (inference mode, saves memory)
             
         Returns:
             trajectory: (batch_size, n_time, d)
@@ -227,7 +235,7 @@ class SchrodingerBridgeModel(nn.Module):
             dt = time_grid[i + 1] - time_grid[i]
             
             x_current = trajectory[:, i, :]
-            drift = self.compute_drift(x_current, t)
+            drift = self.compute_drift(x_current, t, create_graph=create_graph)
             
             if method == 'euler':
                 # Euler-Maruyama with noise
@@ -260,8 +268,8 @@ class SchrodingerBridgeModel(nn.Module):
         Returns:
             loss: Scalar loss
         """
-        # Compute drift
-        drift = self.compute_drift(x_t, t)
+        # Compute drift (create_graph=True for training backprop)
+        drift = self.compute_drift(x_t, t, create_graph=True)
         
         # Empirical velocity
         empirical_velocity = (x_next - x_t) / dt

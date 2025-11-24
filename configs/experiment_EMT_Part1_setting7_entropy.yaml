@@ -1,0 +1,242 @@
+# ============================================================================
+# Experiment Configuration: EMT Dataset - Setting 7 (Entropy Evolution Analysis)
+# ============================================================================
+# This experiment trains models on full trajectory and analyzes entropy evolution
+# to test whether models can reproduce non-monotonic entropy dynamics
+
+# Experiment metadata
+experiment:
+  name: "EMT_Cook_Setting7_Entropy"
+  description: "Entropy evolution analysis: test if models reproduce non-monotonic entropy dynamics"
+  version: "1.0"
+  author: "Shi Pan"
+  date: "2024-11-19"
+
+# Configuration file references
+configs:
+  data: "data_EMT_Cook_with_label.yaml"
+  models: "models_default.yaml"
+  analyzer: "analyzer_default.yaml"
+
+# Data setting selection
+data_setting: "setting7"  # Use setting7 from data config
+
+# Models to train for this experiment
+models_to_train:
+  - name: "sb_mlplus"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
+  
+  - name: "batch_ot"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 128
+  
+  - name: "vae"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 128
+  
+  - name: "ot"
+    enabled: true
+    override_params:
+      training:
+        epochs: 150
+        batch_size: 128
+  
+  - name: "sb"
+    enabled: true
+    override_params:
+      training:
+        epochs: 150
+        batch_size: 64
+
+# Experiment-specific settings
+settings:
+  seed: 42
+  device: "cuda"
+  
+  multi_gpu:
+    enabled: false
+    device_ids: [0, 1]
+    strategy: "ddp"
+  
+  num_workers: 4
+  
+  mixed_precision:
+    enabled: false
+    dtype: "float16"
+  
+  # Output directory
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/EMT_Part1_Setting7"
+  
+  subdirs:
+    checkpoints: "checkpoints"
+    logs: "logs"
+    visualizations: "visualizations"
+    metrics: "metrics"
+    generated_data: "generated_data"
+    entropy_analysis: "entropy_analysis"  # Store entropy analysis results
+  
+  logging:
+    console_level: "INFO"
+    file_level: "DEBUG"
+    log_file: "experiment.log"
+    
+    wandb:
+      enabled: false
+      project: "SynthaticSCData"
+      entity: null
+      tags: ["EMT", "Setting7", "Entropy", "Exp7"]
+      notes: "Testing non-monotonic entropy evolution reproduction"
+    
+    tensorboard:
+      enabled: true
+      log_dir: "tensorboard"
+  
+  checkpoint:
+    save_frequency: 10
+    keep_last_n: 3
+    save_best: true
+    save_optimizer: true
+    save_scheduler: true
+
+# Evaluation settings
+evaluation:
+  eval_during_training: true
+  eval_frequency: 5
+  eval_on_test: true
+  
+  compute_metrics: true
+  generate_visualizations: true
+  save_generated_samples: true
+  
+  n_samples_per_model: 1000
+  
+  # Entropy evolution analysis (Experiment 7 specific)
+  entropy_evolution_analysis:
+    enabled: true
+    method: "knn"  # Options: 'knn', 'gaussian', 'both'
+    k_neighbors: 5
+    n_samples_initial: 1000  # Number of cells to sample from t0 for trajectory generation
+    cross_validate_methods: true  # Run both KNN and Gaussian for validation
+    
+    # Comparison settings
+    compare_with_setting1: true  # Compare with Setting1 (boundary only)
+    compare_with_setting2: true  # Compare with Setting2 (full trajectory)
+    compare_with_setting3: false  # Optional: compare with Setting3 (key points)
+    
+    # Analysis parameters
+    compute_peak_characteristics: true
+    compute_curve_similarity: true
+    compute_rate_asymmetry: true
+
+# Post-training analysis
+post_analysis:
+  enabled: true
+  
+  tasks:
+    - name: "entropy_evolution_analysis"
+      description: "Analyze entropy evolution in generated trajectories"
+      enabled: true
+      params:
+        method: "knn"
+        k_neighbors: 5
+    
+    - name: "peak_detection_analysis"
+      description: "Detect and analyze entropy peaks"
+      enabled: true
+    
+    - name: "comparison_with_real_entropy"
+      description: "Compare generated entropy curves with real data"
+      enabled: true
+    
+    - name: "cross_setting_comparison"
+      description: "Compare entropy evolution across different settings"
+      enabled: true
+      params:
+        setting1_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/EMT_Part1_Setting1"
+        setting2_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/EMT_Part1_Setting2"
+        setting3_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/EMT_Part1_Setting3"
+    
+    - name: "generate_report"
+      description: "Generate comprehensive HTML report"
+      enabled: true
+
+# Resource limits
+resources:
+  max_memory_gb: 32
+  max_time_hours: 48
+  
+# Error handling
+error_handling:
+  continue_on_error: false
+  save_on_error: true
+  send_notification: false
+  notification_email: null
+
+# Experiment 7 specific parameters
+experiment7_params:
+  # Entropy estimation parameters
+  entropy_method: "knn"  # Primary method
+  k_neighbors: 5
+  use_shrinkage: true  # For Gaussian method
+  
+  # Sampling parameters
+  n_samples_per_timepoint: 1000  # For real data entropy calculation
+  n_samples_initial_states: 1000  # For trajectory generation
+  
+  # Time mapping (for trajectory generation)
+  time_to_hours:
+    "0d": 0.0
+    "8h": 8.0
+    "1d": 24.0
+    "3d": 72.0
+    "7d": 168.0
+  
+  # Normalized time grid (for SB model)
+  time_grid_normalized: [0.0, 0.048, 0.143, 0.429, 1.0]  # Normalized to [0, 1]
+  
+  # Analysis thresholds
+  peak_detection:
+    min_amplitude: 0.5  # Minimum peak amplitude to be considered significant
+    min_nonmonotonicity_ratio: 1.1  # Peak must be at least 10% higher than boundaries
+  
+  # Curve similarity metrics
+  similarity_metrics:
+    - "mse"  # Mean Squared Error
+    - "dtw"  # Dynamic Time Warping (if available)
+  
+  # Visualization parameters
+  visualization:
+    save_entropy_curves: true
+    save_peak_characteristics: true
+    save_method_comparison: true
+    save_cross_setting_comparison: true
+    figure_format: ["png", "pdf"]
+    dpi: 300
+  
+  # Comparison paths (for cross-setting analysis)
+  comparison_settings:
+    setting1:
+      path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/EMT_Part1_Setting1"
+      checkpoint: "checkpoints/sb_mlplus/best_model.pt"
+      description: "Boundary only (0d, 7d)"
+    
+    setting2:
+      path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/EMT_Part1_Setting2"
+      checkpoint: "checkpoints/sb_mlplus/best_model.pt"
+      description: "Full trajectory (0d, 8h, 1d, 3d, 7d)"
+    
+    setting3:
+      path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/EMT_Part1_Setting3"
+      checkpoint: "checkpoints/sb_mlplus/best_model.pt"
+      description: "Key points (0d, 8h, 7d)"
+      enabled: false  # Optional comparison

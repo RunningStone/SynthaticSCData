@@ -1,0 +1,185 @@
+# ============================================================================
+# Experiment Configuration: EMT Dataset - Setting 6 (Interpolated Data)
+# ============================================================================
+# This experiment trains models on linearly interpolated intermediate states
+# to test whether geometric interpolation can replace real observations
+
+# Experiment metadata
+experiment:
+  name: "EMT_Cook_Setting6_Interpolated"
+  description: "Train models on boundary (real) + interpolated intermediate time points"
+  version: "1.0"
+  author: "Shi Pan"
+  date: "2024-11-18"
+
+# Configuration file references
+configs:
+  data: "data_EMT_Cook_with_label.yaml"
+  models: "models_default.yaml"
+  analyzer: "analyzer_default.yaml"
+
+# Data setting selection
+data_setting: "setting6_interpolated"  # Use setting6_interpolated from data config
+
+# Models to train for this experiment
+models_to_train:
+  - name: "sb_mlplus"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
+  
+  - name: "batch_ot"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 128
+  
+  - name: "vae"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 128
+  
+  - name: "ot"
+    enabled: true
+    override_params:
+      training:
+        epochs: 150
+        batch_size: 128
+  
+  - name: "sb"
+    enabled: true
+    override_params:
+      training:
+        epochs: 150
+        batch_size: 64
+
+# Experiment-specific settings
+settings:
+  seed: 42
+  device: "cuda"
+  
+  multi_gpu:
+    enabled: false
+    device_ids: [0, 1]
+    strategy: "ddp"
+  
+  num_workers: 4
+  
+  mixed_precision:
+    enabled: false
+    dtype: "float16"
+  
+  # Output directory
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/EMT_Part1_Setting6"
+  
+  subdirs:
+    checkpoints: "checkpoints"
+    logs: "logs"
+    visualizations: "visualizations"
+    metrics: "metrics"
+    generated_data: "generated_data"
+    interpolated_data: "interpolated_data"  # Store generated interpolated data
+  
+  logging:
+    console_level: "INFO"
+    file_level: "DEBUG"
+    log_file: "experiment.log"
+    
+    wandb:
+      enabled: false
+      project: "SynthaticSCData"
+      entity: null
+      tags: ["EMT", "Setting6", "Interpolated"]
+      notes: "Testing geometric interpolation vs real intermediate states"
+    
+    tensorboard:
+      enabled: true
+      log_dir: "tensorboard"
+  
+  checkpoint:
+    save_frequency: 10
+    keep_last_n: 3
+    save_best: true
+    save_optimizer: true
+    save_scheduler: true
+
+# Evaluation settings
+evaluation:
+  eval_during_training: true
+  eval_frequency: 5
+  eval_on_test: true
+  
+  compute_metrics: true
+  generate_visualizations: true
+  save_generated_samples: true
+  
+  n_samples_per_model: 1000
+  
+  # Interpolation-specific evaluation
+  interpolation_analysis:
+    enabled: true
+    compute_iei: true  # Interpolation Effectiveness Index
+    compute_rsi: true  # Residual Structure Index
+    per_timepoint_analysis: true
+    compare_with_setting1: true
+    compare_with_setting2: true
+
+# Post-training analysis
+post_analysis:
+  enabled: true
+  
+  tasks:
+    - name: "interpolation_quality_analysis"
+      description: "Analyze quality of interpolated training data"
+      enabled: true
+    
+    - name: "comparison_with_real_intermediate"
+      description: "Compare generated data with real intermediate states"
+      enabled: true
+    
+    - name: "residual_structure_analysis"
+      description: "Analyze structure in interpolation residuals"
+      enabled: true
+    
+    - name: "generate_report"
+      description: "Generate comprehensive HTML report"
+      enabled: true
+
+# Resource limits
+resources:
+  max_memory_gb: 32
+  max_time_hours: 48
+  
+# Error handling
+error_handling:
+  continue_on_error: false
+  save_on_error: true
+  send_notification: false
+  notification_email: null
+
+# Experiment 6 specific parameters
+experiment6_params:
+  # Interpolation parameters
+  boundary_timepoints: ["0d", "7d"]
+  intermediate_timepoints: ["8h", "1d", "3d"]
+  n_samples_per_timepoint: 750
+  
+  # Time mapping (for interpolation weights)
+  time_to_hours:
+    "0d": 0.0
+    "8h": 8.0
+    "1d": 24.0
+    "3d": 72.0
+    "7d": 168.0
+  
+  # Analysis parameters
+  rsi_n_components: 10  # Number of PCs for RSI calculation
+  
+  # Comparison settings
+  setting1_results_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/EMT_Part1_Setting1"
+  setting2_results_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/EMT_Part1_Setting2"

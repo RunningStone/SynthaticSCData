@@ -1,0 +1,121 @@
+# ============================================================================
+# Experiment Configuration: EMT Part1 - Ablation Study (Remove 1d)
+# ============================================================================
+# Experiment 4: Systematic ablation to quantify marginal contribution of 1d timepoint
+
+# Experiment metadata
+experiment:
+  name: "EMT_Part1_Setting4_Ablation_Remove1d"
+  description: "Ablation study: remove 1d timepoint to assess its marginal contribution to model performance"
+  version: "1.0"
+  author: "Shi Pan"
+  date: "2024-11-18"
+  parent_experiment: "EMT_Part1_Setting2"
+  ablation_target: "1d"
+
+# Configuration file references
+configs:
+  data: "data_EMT_Cook_with_label.yaml"
+  models: "models_default.yaml"
+  analyzer: "analyzer_default.yaml"
+
+# Data setting selection (reference to data config)
+data_setting: "setting4_ablation_remove_1d"
+
+# Data sampling override
+# 8974 / 4 timepoints = 2243.5 ≈ 2243 cells per timepoint
+data_sampling_override:
+  total_cells: 8974
+  # Rationale:
+  # - Fair comparison: same total samples as Setting2 (8974)
+  # - 4 timepoints × 2243 = 8972 cells (close to target)
+  # - Each timepoint has sufficient samples (>1000) for convergence
+
+# Models to train (only sb_mlplus to save computation)
+models_to_train:
+  - name: "sb_mlplus"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
+        early_stopping_patience: 30
+
+# Experiment-specific settings
+settings:
+  seed: 42
+  device: "cuda"
+  multi_gpu:
+    enabled: false
+  num_workers: 4
+  mixed_precision:
+    enabled: false
+  
+  # Output directory
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/experiment_EMT_Part1_setting4_ablation_remove_1d"
+  
+  subdirs:
+    checkpoints: "checkpoints"
+    logs: "logs"
+    visualizations: "visualizations"
+    metrics: "metrics"
+    generated_data: "generated_data"
+  
+  logging:
+    console_level: "INFO"
+    file_level: "DEBUG"
+    log_file: "experiment.log"
+    wandb:
+      enabled: false
+    tensorboard:
+      enabled: true
+      log_dir: "tensorboard"
+  
+  checkpoint:
+    save_frequency: 10
+    keep_last_n: 3
+    save_best: true
+    save_optimizer: true
+    save_scheduler: true
+
+# Evaluation settings
+evaluation:
+  eval_during_training: true
+  eval_frequency: 5
+  eval_on_test: true
+  compute_metrics: true
+  generate_visualizations: true
+  save_generated_samples: true
+  n_samples_per_model: 1000
+  
+  # Evaluation endpoints (always 0d to 7d for Part1)
+  start_timepoint: "0d"
+  end_timepoint: "7d"
+  
+  trajectory:
+    n_intermediate_points: 20
+    save_full_trajectory: true
+    analyze_per_segment: true
+
+# Post-training analysis
+post_analysis:
+  enabled: true
+  tasks:
+    - name: "ablation_impact_analysis"
+      description: "Analyze the impact of removing 1d timepoint"
+      enabled: true
+    - name: "generate_report"
+      description: "Generate ablation study report"
+      enabled: true
+
+# Resource limits
+resources:
+  max_memory_gb: 32
+  max_time_hours: 24
+
+# Error handling
+error_handling:
+  continue_on_error: false
+  save_on_error: true
+  send_notification: false
+  notification_email: null

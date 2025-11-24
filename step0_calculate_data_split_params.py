@@ -188,19 +188,29 @@ def calculate_setting_params(
 
 def compute_fair_comparison_params(
     setting_results: List[Dict],
-    min_cells_per_category: int = 1000
+    min_cells_per_category: int = 1000,
+    group_definitions: Dict[str, List[str]] = None,
+    bottleneck_percentage: float = 100.0
 ) -> Dict:
     """
     Compute final parameters ensuring fair comparison across settings
     
     Strategy:
-    1. Find the most restrictive setting (smallest max total)
-    2. Use that as the target total for all settings
-    3. Distribute evenly across timepoints for each setting
+    1. Group settings into experimental groups (e.g., forward-only vs with-reversal)
+    2. For each group, find the most restrictive setting (smallest max total)
+    3. Apply bottleneck_percentage to adjust the target total
+    4. Use that as the target total for all settings in the same group
+    5. Distribute evenly across timepoints for each setting
     
     Args:
         setting_results: List of results from calculate_setting_params
-        min_cells_per_category: Minimum cells per category
+        min_cells_per_category: Minimum cells per category (default for all groups)
+        group_definitions: Dict mapping group names to list of setting names
+                          e.g., {'group1': ['setting1', 'setting2', 'setting3'],
+                                 'group2': ['setting4', 'setting5', 'setting6']}
+        bottleneck_percentage: Percentage of bottleneck capacity to use (0-100)
+                              Default 100.0 means use full bottleneck capacity
+                              e.g., 90.0 means use 90% of bottleneck
         
     Returns:
         Dict with final parameters for each setting
@@ -208,6 +218,11 @@ def compute_fair_comparison_params(
     print("\n" + "="*80)
     print("Computing Fair Comparison Parameters")
     print("="*80)
+    
+    # If no group definitions provided, treat all settings as one group
+    if group_definitions is None:
+        all_settings = [r['setting_name'] for r in setting_results]
+        group_definitions = {'all': all_settings}
     
     # Calculate max possible total for each setting
     setting_max_totals = {}
@@ -222,12 +237,34 @@ def compute_fair_comparison_params(
         print(f"  Max per timepoint: {max_per_tp:,}")
         print(f"  Max total: {max_total:,}")
     
-    # Find the most restrictive setting (smallest max total)
-    bottleneck_setting = min(setting_max_totals, key=setting_max_totals.get)
-    target_total = setting_max_totals[bottleneck_setting]
-    
-    print(f"\n⚠️  Most restrictive setting: {bottleneck_setting}")
-    print(f"⚠️  Target total for all settings: {target_total:,}")
+    # Find target total for each group
+    group_targets = {}
+    for group_name, group_settings in group_definitions.items():
+        # Filter to settings in this group
+        group_totals = {s: setting_max_totals[s] for s in group_settings if s in setting_max_totals}
+        if group_totals:
+            bottleneck_setting = min(group_totals, key=group_totals.get)
+            raw_target_total = group_totals[bottleneck_setting]
+            
+            # Apply bottleneck percentage
+            adjusted_target_total = int(raw_target_total * (bottleneck_percentage / 100.0))
+            
+            group_targets[group_name] = {
+                'target_total': adjusted_target_total,
+                'raw_target_total': raw_target_total,
+                'bottleneck_setting': bottleneck_setting,
+                'settings': group_settings,
+                'bottleneck_percentage': bottleneck_percentage
+            }
+            print(f"\n📊 {group_name}:")
+            print(f"   Settings: {group_settings}")
+            print(f"   Bottleneck: {bottleneck_setting}")
+            print(f"   Raw target total: {raw_target_total:,}")
+            if bottleneck_percentage != 100.0:
+                print(f"   Bottleneck percentage: {bottleneck_percentage}%")
+                print(f"   Adjusted target total: {adjusted_target_total:,} ({bottleneck_percentage}% of {raw_target_total:,})")
+            else:
+                print(f"   Target total: {adjusted_target_total:,}")
     
     # Compute final parameters for each setting
     final_params = {}
@@ -239,6 +276,17 @@ def compute_fair_comparison_params(
     for result in setting_results:
         setting_name = result['setting_name']
         n_timepoints = result['n_timepoints']
+        
+        # Find which group this setting belongs to
+        target_total = None
+        for group_name, group_info in group_targets.items():
+            if setting_name in group_info['settings']:
+                target_total = group_info['target_total']
+                break
+        
+        if target_total is None:
+            print(f"\n⚠️  Warning: {setting_name} not in any group, skipping...")
+            continue
         
         # Calculate cells per timepoint to achieve target total
         cells_per_tp = target_total // n_timepoints
@@ -263,12 +311,20 @@ def compute_fair_comparison_params(
         else:
             actual_total = target_total
         
+        # Get bottleneck percentage for this group
+        group_bottleneck_pct = 100.0
+        for group_name, group_info in group_targets.items():
+            if setting_name in group_info['settings']:
+                group_bottleneck_pct = group_info.get('bottleneck_percentage', 100.0)
+                break
+        
         final_params[setting_name] = {
             'cells_per_timepoint': cells_per_tp,
             'total_cells': actual_total,
             'n_timepoints': n_timepoints,
             'per_timepoint_usage': f"{cells_per_tp:,} / {max_available:,} ({100*cells_per_tp/max_available:.1f}%)",
-            'bottleneck_timepoint': bottleneck_tp
+            'bottleneck_timepoint': bottleneck_tp,
+            'bottleneck_percentage': group_bottleneck_pct
         }
         
         print(f"\n✓ {setting_name}:")
@@ -293,6 +349,9 @@ def generate_yaml_snippets(final_params: Dict, output_dir: Path):
         if params is None:
             continue
         
+        bottleneck_pct = params.get('bottleneck_percentage', 100.0)
+        bottleneck_note = f"\n  # - Bottleneck percentage: {bottleneck_pct}%" if bottleneck_pct != 100.0 else ""
+        
         yaml_content = f"""# Recommended parameters for {setting_name}
 # Auto-generated by step0_calculate_data_split_params.py
 
@@ -302,7 +361,7 @@ def generate_yaml_snippets(final_params: Dict, output_dir: Path):
   
   # Rationale:
   # - {params['n_timepoints']} timepoints × {params['cells_per_timepoint']:,} = {params['total_cells']:,} total
-  # - Bottleneck: {params['bottleneck_timepoint']} ({params['per_timepoint_usage']})
+  # - Bottleneck: {params['bottleneck_timepoint']} ({params['per_timepoint_usage']}){bottleneck_note}
   # - Fair comparison: all settings use same total training samples
   # - Sufficient for convergence: each category has ≥1000 samples
 
@@ -356,6 +415,43 @@ Example usage:
     )
     
     parser.add_argument(
+        '--min_cells_group1',
+        type=int,
+        default=None,
+        help='Minimum cells for experimental group 1 (if different from --min_cells)'
+    )
+    
+    parser.add_argument(
+        '--min_cells_group2',
+        type=int,
+        default=None,
+        help='Minimum cells for experimental group 2 (if different from --min_cells)'
+    )
+    
+    parser.add_argument(
+        '--group1_settings',
+        type=str,
+        nargs='+',
+        default=None,
+        help='Settings in experimental group 1 (e.g., setting1 setting2 setting3)'
+    )
+    
+    parser.add_argument(
+        '--group2_settings',
+        type=str,
+        nargs='+',
+        default=None,
+        help='Settings in experimental group 2 (e.g., setting4 setting5 setting6)'
+    )
+    
+    parser.add_argument(
+        '--bottleneck_percentage',
+        type=float,
+        default=100.0,
+        help='Percentage of bottleneck capacity to use (0-100, default: 100.0)'
+    )
+    
+    parser.add_argument(
         '--output_dir',
         type=str,
         default='./outputs/split_params',
@@ -367,6 +463,32 @@ Example usage:
     # Validate inputs
     if len(args.settings) < 2:
         raise ValueError("At least 2 settings must be specified for fair comparison")
+    
+    # Validate bottleneck_percentage
+    if args.bottleneck_percentage <= 0 or args.bottleneck_percentage > 100:
+        raise ValueError(f"bottleneck_percentage must be between 0 and 100, got {args.bottleneck_percentage}")
+    
+    if args.bottleneck_percentage != 100.0:
+        print(f"\n⚙️  Using {args.bottleneck_percentage}% of bottleneck capacity")
+    
+    # Handle min_cells for different groups
+    min_cells_group1 = args.min_cells_group1 if args.min_cells_group1 is not None else args.min_cells
+    min_cells_group2 = args.min_cells_group2 if args.min_cells_group2 is not None else args.min_cells
+    
+    # Warn if only one group-specific min_cells is provided
+    if args.min_cells_group1 is not None and args.min_cells_group2 is None:
+        print(f"\n⚠️  Warning: Only min_cells_group1 specified, using min_cells={args.min_cells} for group2")
+    if args.min_cells_group2 is not None and args.min_cells_group1 is None:
+        print(f"\n⚠️  Warning: Only min_cells_group2 specified, using min_cells={args.min_cells} for group1")
+    
+    # Build group definitions
+    group_definitions = None
+    if args.group1_settings or args.group2_settings:
+        group_definitions = {}
+        if args.group1_settings:
+            group_definitions['group1'] = args.group1_settings
+        if args.group2_settings:
+            group_definitions['group2'] = args.group2_settings
     
     # Load data configuration
     print("\n" + "="*80)
@@ -415,6 +537,14 @@ Example usage:
         setting_config = config[setting_name]
         time_points = setting_config['time_points']
         
+        # Determine which min_cells to use for this setting
+        min_cells_for_setting = args.min_cells
+        if group_definitions:
+            if 'group1' in group_definitions and setting_name in group_definitions['group1']:
+                min_cells_for_setting = min_cells_group1
+            elif 'group2' in group_definitions and setting_name in group_definitions['group2']:
+                min_cells_for_setting = min_cells_group2
+        
         result = calculate_setting_params(
             df=df,
             obs=obs,
@@ -423,7 +553,7 @@ Example usage:
             train_batches=train_batches,
             batch_column=batch_column,
             label_column=label_column,
-            min_cells_per_category=args.min_cells
+            min_cells_per_category=min_cells_for_setting
         )
         
         setting_results.append(result)
@@ -431,7 +561,9 @@ Example usage:
     # Compute fair comparison parameters
     final_params = compute_fair_comparison_params(
         setting_results=setting_results,
-        min_cells_per_category=args.min_cells
+        min_cells_per_category=args.min_cells,
+        group_definitions=group_definitions,
+        bottleneck_percentage=args.bottleneck_percentage
     )
     
     # Save results

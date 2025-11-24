@@ -21,8 +21,15 @@ configs:
 data_setting: "setting6"  # Use setting6 from data config
 
 # Data sampling override (experiment-specific)
+# Auto-updated from step0_calculate_data_split_params.py results
 data_sampling_override:
-  total_cells: 6000  # 3 timepoints × 2000 = 6000 total samples
+  total_cells: 8974  # Updated: 2024-11-18
+  # Setting6: 3 timepoints × 2,991 = 8,974 total samples
+  # 
+  # Rationale:
+  # - Bottleneck: 0d with 4,487 available cells (66.7% usage per timepoint)
+  # - Fair comparison: Group2 (setting4,5,6) all use 8,974 total samples
+  # - Sufficient for convergence: each category has ≥1000 samples
 
 # Models to train for this experiment
 models_to_train:
@@ -70,7 +77,7 @@ settings:
     dtype: "float16"
   
   # Output directory
-  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/EMT_Setting6"
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/EMT_Part2_Setting3"
   
   # Subdirectories
   subdirs:

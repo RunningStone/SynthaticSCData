@@ -10,7 +10,19 @@
 
 ### 实验设计理念
 
-项目采用模块化配置系统，支持灵活定义不同的实验设置。每个设置通过YAML配置文件指定时间点选择、数据采样策略和模型配置。系统自动处理数据加载、模型训练、评估和可视化的完整流程。当前实现包含六个预定义设置，覆盖从简单边界插值到复杂轨迹学习的多种场景。
+项目采用模块化配置系统，支持灵活定义不同的实验设置。每个设置通过YAML配置文件指定时间点选择、数据采样策略和模型配置。系统自动处理数据加载、模型训练、评估和可视化的完整流程。
+
+当前实现包含六个预定义设置，分为两个实验部分（Part）：
+
+**Part1 (仅正向EMT)**：
+- Setting1: 边界点 (0d, 7d) - 低时间分辨率
+- Setting2: 全部时间点 (0d→8h→1d→3d→7d) - 高时间分辨率
+- Setting3: 关键时间点 (0d, 8h, 7d) - 中等分辨率
+
+**Part2 (正向+反向)**：
+- Setting1: 全部8个时间点 - 完整双向轨迹
+- Setting2: 边界点 (0d, 3d_rm) - 长距离插值
+- Setting3: 关键点 (0d, 7d, 3d_rm) - 峰值信息影响
 ## 实验流程
 
 ### Step 1: 训练模型
@@ -20,7 +32,15 @@
 运行单个实验设置的命令格式为：
 
 ```bash
-bash step1_run_experiment_EMT.sh experiment_EMT_setting1.yaml
+# Part1 - 仅正向EMT
+bash step1_run_experiment_EMT.sh experiment_EMT_Part1_setting1.yaml
+bash step1_run_experiment_EMT.sh experiment_EMT_Part1_setting2.yaml
+bash step1_run_experiment_EMT.sh experiment_EMT_Part1_setting3.yaml
+
+# Part2 - 包含反向
+bash step1_run_experiment_EMT.sh experiment_EMT_Part2_setting1.yaml
+bash step1_run_experiment_EMT.sh experiment_EMT_Part2_setting2.yaml
+bash step1_run_experiment_EMT.sh experiment_EMT_Part2_setting3.yaml
 ```
 
 系统首先加载并验证配置，确保所有引用的时间点存在且有足够的细胞数量。然后根据配置中指定的采样策略准备训练和测试数据。对于每个启用的模型，系统创建相应的训练器实例，执行训练循环并保存最佳检查点。训练过程包含早停机制和学习率调度，自动优化收敛性能。最后系统在测试集上评估所有训练好的模型，计算十个标准指标并保存结果到JSON文件。
@@ -43,9 +63,23 @@ bash step2_run_multi_setting_visualization.sh
 
 ## 模型架构
 
-项目实现了五种生成模型用于细胞状态转换学习。Schrödinger Bridge模型是核心，通过学习时间依赖的漂移场来描述细胞状态演化。基础SB模型使用双势函数网络参数化漂移场，每个势函数由四层MLP实现，隐藏层维度为512。MLPlus增强版本针对多时间点场景进行了优化，引入多尺度时间编码使用10个可学习频率捕捉不同时间尺度的动力学，采用4个残差块提高梯度稳定性，参数量约470万。
+项目实现了五种生成模型用于细胞状态转换学习。Schrödinger Bridge模型是核心，通过学习时间依赖的漂移场来描述细胞状态演化。基础SB模型使用双势函数网络参数化漂移场，每个势函数由四层MLP实现，隐藏层维度为512。MLPlus增强版本针对多时间点场景进行了优化，引入多尺度时间编码使用10个可学习频率捕捉不同时间尺度的动力学，采用4个残差块提高梯度稳定性。
 
-Optimal Transport模型学习从初始分布到目标分布的确定性映射，通过最小化Wasserstein-2距离实现。Conditional VAE模型采用变分自编码器框架，编码器将起始状态和时间条件映射到潜在空间，解码器重构目标状态。Batch OT模型针对多时间点场景设计，学习多个连续时间段的OT映射，推理时顺序应用这些映射并在离散状态间插值。
+Optimal Transport模型学习从初始分布到目标分布的确定性映射，通过最小化Wasserstein-2距离实现。Conditional VAE模型采用变分自编码器框架，编码器将起始状态和时间条件映射到潜在空间，解码器重构目标状态。Batch OT模型针对多时间点场景设计，包含7个独立的OT模型（每个时间转换一个），推理时顺序应用这些映射并在离散状态间插值。
+
+### 模型参数量平衡
+
+所有模型的参数量已优化至相近水平，确保公平对比：
+
+| 模型 | 参数量 | 显存占用 | 说明 |
+|------|--------|---------|------|
+| VAE | 5.95M | 196 MB | 最小模型 |
+| SB MLPlus | 9.80M | 322 MB | 基准模型 |
+| OT | 10.16M | 334 MB | +3.6% |
+| SB | 10.59M | 347 MB | +8.0% |
+| Batch OT | 10.86M | 357 MB | +10.7% (7个OT模型) |
+
+**Batch OT优化**: 原始配置参数量达71M，通过减小每个OT模型的hidden_dims（从[1536,1536,1536,1536]降到[512,512,512]），使总参数量降至10.86M，与其他模型相当。
 
 所有模型使用统一的训练框架，包含AdamW优化器、学习率调度、梯度裁剪和早停机制。训练过程自动保存最佳检查点，支持从中断点恢复训练。
 
@@ -73,17 +107,18 @@ source .venv/bin/activate
 每个实验设置对应一个配置文件。使用bash脚本指定配置文件名即可运行完整的训练和评估流程。系统自动处理数据加载、模型训练、指标计算和结果保存。
 
 ```bash
-# 运行Setting 1（边界点）
-bash step1_run_experiment_EMT.sh experiment_EMT_setting1.yaml
+# Part1 - 仅正向EMT
+bash step1_run_experiment_EMT.sh experiment_EMT_Part1_setting1.yaml  # 边界点
+bash step1_run_experiment_EMT.sh experiment_EMT_Part1_setting2.yaml  # 全部时间点
+bash step1_run_experiment_EMT.sh experiment_EMT_Part1_setting3.yaml  # 关键时间点
 
-# 运行Setting 2（所有前向时间点）
-bash step1_run_experiment_EMT.sh experiment_EMT_setting2.yaml
-
-# 运行其他设置
-bash step1_run_experiment_EMT.sh experiment_EMT_setting3.yaml
+# Part2 - 包含反向
+bash step1_run_experiment_EMT.sh experiment_EMT_Part2_setting1.yaml  # 全部8个时间点
+bash step1_run_experiment_EMT.sh experiment_EMT_Part2_setting2.yaml  # 边界点
+bash step1_run_experiment_EMT.sh experiment_EMT_Part2_setting3.yaml  # 关键点
 ```
 
-每个设置的结果保存在独立的输出目录，包含模型检查点、训练历史、评估指标和日志文件。目录结构为OUTPUTs/SynthaticSCData/EMT_SettingX，其中X是设置编号。
+每个设置的结果保存在独立的输出目录，包含模型检查点、训练历史、评估指标和日志文件。目录结构为OUTPUTs/SynthaticSCData/EMT_Part{X}_Setting{Y}，其中X是Part编号（1或2），Y是Setting编号（1、2或3）。
 
 ### 跨设置可视化对比
 
@@ -101,7 +136,7 @@ bash step2_run_multi_setting_visualization.sh
 
 ```bash
 # 查看某个设置的结果
-cat OUTPUTs/SynthaticSCData/EMT_Setting1/results.json
+cat OUTPUTs/SynthaticSCData/EMT_Part1_Setting1/results.json
 
 # 查看跨设置指标对比
 cat OUTPUTs/SynthaticSCData/visualizations/metrics_comparison.csv
@@ -294,10 +329,53 @@ python step2_multi_setting_visualization.py \
 - ✅ 基础 Schrödinger Bridge 模型
 - ✅ Setting 1/2 对比实验
 
+## 命名规范
+
+### 配置文件命名
+
+项目采用Part1/Part2命名规范，清晰区分实验类型：
+
+```
+experiment_EMT_Part{X}_setting{Y}.yaml
+                   ↑           ↑
+                   |           └─ 具体实验设计 (1,2,3)
+                   └─ 实验部分 (1=仅正向, 2=含反向)
+```
+
+### 输出目录结构
+
+```
+/OUTPUTs/SynthaticSCData/
+├── EMT_Part1_Setting1/  # Part1_setting1 (Forward EMT, Boundary)
+├── EMT_Part1_Setting2/  # Part1_setting2 (Forward EMT, Full)
+├── EMT_Part1_Setting3/  # Part1_setting3 (Forward EMT, Key points)
+├── EMT_Part2_Setting1/  # Part2_setting1 (With Reversal, Full)
+├── EMT_Part2_Setting2/  # Part2_setting2 (With Reversal, Boundary)
+└── EMT_Part2_Setting3/  # Part2_setting3 (With Reversal, Key points)
+```
+
+### 数据采样参数
+
+所有设置的采样参数已优化，确保公平对比：
+
+| 设置 | 时间点数 | 采样策略 | 总样本量 |
+|------|---------|---------|---------|
+| Part1_setting1 | 2 | 4,487 cells/tp | 8,974 |
+| Part1_setting2 | 5 | total | 8,974 |
+| Part1_setting3 | 3 | total | 8,974 |
+| Part2_setting1 | 8 | total | 8,974 |
+| Part2_setting2 | 2 | 4,487 cells/tp | 8,974 |
+| Part2_setting3 | 3 | total | 8,974 |
+
+详细说明参见 `NAMING_CONVENTION_UPDATE.md` 和 `DATA_CONFIG_UPDATE_SUMMARY.md`。
+
 ## 更多信息
 
-- **详细系统设计**：参见 `SystemDesign.md`
-- **可视化系统指南**：参见 `VISUALIZATION_GUIDE.md`
+- **详细系统设计**：参见 `20251118_SystemDesign.md`
+- **命名规范更新**：参见 `NAMING_CONVENTION_UPDATE.md`
+- **数据配置更新**：参见 `DATA_CONFIG_UPDATE_SUMMARY.md`
+- **模型参数平衡**：参见 `BATCH_OT_PARAMETER_BALANCE.md`
+- **快速参考**：参见 `QUICK_REFERENCE.md`
 - **配置文件示例**：参见 `configs/` 目录
 - **问题反馈**：提交 Issue
 

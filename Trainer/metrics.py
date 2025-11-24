@@ -7,7 +7,7 @@ Includes distribution-based and correlation-based metrics
 
 import torch
 import numpy as np
-from typing import Tuple, Dict
+from typing import Tuple, Dict, List
 from scipy.stats import wasserstein_distance, entropy
 from scipy.spatial.distance import jensenshannon
 from sklearn.metrics import r2_score
@@ -288,6 +288,82 @@ def compute_correlation_structure_similarity(
         'correlation_frobenius_diff': float(frobenius_diff),
         'correlation_structure_corr': float(corr_of_corr)
     }
+
+
+def compute_trajectory_continuity(
+    model,
+    initial_states: np.ndarray,
+    time_grid: List[float],
+    device: str = 'cuda'
+) -> float:
+    """
+    Compute trajectory continuity metric (average jump distance).
+    
+    Measures how smooth the generated trajectory is by computing the average
+    Euclidean distance between consecutive time points.
+    
+    Args:
+        model: Trained model with generate_trajectory method
+        initial_states: Initial states (n_samples, n_features)
+        time_grid: List of time points [t0, t1, ..., tK]
+        device: Device for computation
+        
+    Returns:
+        Average jump distance across all time intervals
+    """
+    import torch
+    
+    model.eval()
+    n_samples = initial_states.shape[0]
+    n_timepoints = len(time_grid)
+    
+    # Convert to tensor
+    if not isinstance(initial_states, torch.Tensor):
+        x_current = torch.tensor(initial_states, dtype=torch.float32).to(device)
+    else:
+        x_current = initial_states.to(device)
+    
+    # Generate trajectory
+    trajectory = [x_current.cpu().numpy()]
+    
+    for j in range(n_timepoints - 1):
+        t_start = time_grid[j]
+        t_end = time_grid[j + 1]
+        
+        # Generate next state
+        with torch.no_grad():
+            try:
+                # Try SB model interface
+                x_next = model.generate_trajectory(
+                    x_current,
+                    t_start=t_start,
+                    t_end=t_end,
+                    n_steps=10
+                )
+            except TypeError:
+                # Try alternative interface (OT, VAE)
+                try:
+                    x_next = model.generate_trajectory(
+                        x_current,
+                        time_grid=[t_start, t_end]
+                    )
+                    if isinstance(x_next, list):
+                        x_next = x_next[-1]
+                except:
+                    # Fallback: direct forward pass
+                    x_next = model(x_current)
+        
+        trajectory.append(x_next.cpu().numpy())
+        x_current = x_next
+    
+    # Compute average jump distance
+    jump_distances = []
+    for j in range(n_timepoints - 1):
+        diff = trajectory[j + 1] - trajectory[j]  # (n_samples, n_features)
+        distances = np.linalg.norm(diff, axis=1)  # (n_samples,)
+        jump_distances.append(distances.mean())
+    
+    return float(np.mean(jump_distances))
 
 
 def compute_all_metrics(
