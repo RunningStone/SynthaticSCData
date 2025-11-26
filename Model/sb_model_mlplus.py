@@ -155,13 +155,22 @@ class MLPlus_SchrodingerBridgeModel(SchrodingerBridgeModel):
         """
         # Initialize parent class (but we'll override the networks)
         # We need to call nn.Module.__init__ directly to avoid parent's network creation
-        nn.Module.__init__(self)
+        # Initialize base class with minimal parameters
+        # We'll override the networks anyway
+        super().__init__(
+            dimension=dimension,
+            hidden_dims=[hidden_dim],  # Dummy, we override the networks
+            time_embedding_dim=time_embedding_dim,
+            dropout=dropout,
+            diffusion_coeff=diffusion_coeff
+        )
         
-        self.dimension = dimension
-        self.time_embedding_dim = time_embedding_dim
-        self.D = diffusion_coeff
+        # Store MLPlus-specific parameters
+        self.hidden_dim = hidden_dim
+        self.n_blocks = n_blocks
+        self.n_time_frequencies = n_time_frequencies
         
-        # Enhanced time embedding (replaces parent's simple embedding)
+        # Override time embedding with enhanced version
         self.time_embed = TimeEmbeddingNetwork(
             embedding_dim=time_embedding_dim,
             n_frequencies=n_time_frequencies

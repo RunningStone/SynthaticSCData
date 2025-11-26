@@ -1,0 +1,166 @@
+# ============================================================================
+# Experiment Configuration: EMT Dataset - Setting 2 (All Time Points)
+# ============================================================================
+# This file orchestrates the complete experiment by referencing other configs.
+
+# Experiment metadata
+experiment:
+  name: "EMT_Cook_Setting2_AllTimepoints"
+  description: "Train models on all time points (0d, 8h, 1d, 3d, 7d) - MLPlus SB, Batch OT, and CVAE"
+  version: "2.0"
+  author: "Shi Pan"
+  date: "2024-11-16"
+
+# Configuration file references
+configs:
+  data: "data_EMT_Cook_with_label.yaml"
+  models: "models_default.yaml"
+  analyzer: "analyzer_default.yaml"
+
+# Data setting selection
+data_setting: "setting2"  # Use setting2 from data config
+
+# Data sampling override (experiment-specific)
+# Override the default sampling parameters from data config
+# Auto-updated from step0_calculate_data_split_params.py results
+data_sampling_override:
+  total_cells: 8974  # Updated: 2024-11-18
+  # Setting2: 8 timepoints × 1,121 = 8,974 total samples
+  # 
+  # Rationale:
+  # - Bottleneck: 0d with 4,487 available cells (25.0% usage per timepoint)
+  # - Fair comparison: Group1 (setting1,2,3) all use 8,974 total samples
+  # - Sufficient for convergence: each category has ≥1000 samples
+  # - Equal total samples eliminates "data quantity" as confounding factor
+
+# Models to train for this experiment
+models_to_train:
+  - name: "sb_mlplus"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
+  
+  - name: "batch_ot"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 128
+  
+  - name: "vae"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200  
+        batch_size: 128
+
+# Experiment-specific settings
+settings:
+  # Random seed for reproducibility
+  seed: 42
+  
+  # Device configuration
+  device: "cuda"
+  
+  # Multi-GPU settings
+  multi_gpu:
+    enabled: false
+    device_ids: [0, 1]
+    strategy: "ddp"
+  
+  # Number of workers for data loading
+  num_workers: 4
+  
+  # Mixed precision training
+  mixed_precision:
+    enabled: false
+    dtype: "float16"
+  
+  # Output directory
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/EMT_Part1_Setting2"
+  
+  # Subdirectories
+  subdirs:
+    checkpoints: "checkpoints"
+    logs: "logs"
+    visualizations: "visualizations"
+    metrics: "metrics"
+    generated_data: "generated_data"
+  
+  # Logging
+  logging:
+    console_level: "INFO"
+    file_level: "DEBUG"
+    log_file: "experiment.log"
+    
+    wandb:
+      enabled: false
+      project: "SynthaticSCData"
+      entity: null
+      tags: ["EMT", "Setting2", "AllTimepoints"]
+      notes: "Full trajectory learning experiment"
+    
+    tensorboard:
+      enabled: true
+      log_dir: "tensorboard"
+  
+  # Checkpointing
+  checkpoint:
+    save_frequency: 10
+    keep_last_n: 3
+    save_best: true
+    save_optimizer: true
+    save_scheduler: true
+
+# Evaluation settings for this experiment
+evaluation:
+  eval_during_training: true
+  eval_frequency: 5
+  eval_on_test: true
+  
+  compute_metrics: true
+  generate_visualizations: true
+  save_generated_samples: true
+  
+  n_samples_per_model: 1000
+  
+  # Trajectory settings (specific to Setting 2)
+  trajectory:
+    n_intermediate_points: 20  # Points between each consecutive time pair
+    save_full_trajectory: true
+    analyze_per_segment: true  # Analyze each time segment separately
+
+# Post-training analysis
+post_analysis:
+  enabled: true
+  
+  tasks:
+    - name: "trajectory_analysis"
+      description: "Analyze full trajectories across all time points"
+      enabled: true
+    
+    - name: "temporal_consistency"
+      description: "Check temporal consistency of generated trajectories"
+      enabled: true
+    
+    - name: "gene_expression_dynamics"
+      description: "Analyze gene expression dynamics over time"
+      enabled: true
+    
+    - name: "generate_report"
+      description: "Generate comprehensive HTML report"
+      enabled: true
+
+# Resource limits
+resources:
+  max_memory_gb: 32
+  max_time_hours: 48  # Longer time for Setting 2
+  
+# Error handling
+error_handling:
+  continue_on_error: false
+  save_on_error: true
+  send_notification: false
+  notification_email: null

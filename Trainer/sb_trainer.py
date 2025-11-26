@@ -2,22 +2,24 @@
 # -*- coding: utf-8 -*-
 """
 Schrödinger Bridge Trainer
-Simplified trainer for SB model on real time series data
+
+Refactored to inherit from BaseTrainer with customization for SB-specific logic.
 """
 
 import torch
-import torch.optim as optim
 from torch.utils.data import DataLoader
-import numpy as np
-from pathlib import Path
-from typing import Dict, Optional
-from tqdm import tqdm
-import json
+from typing import Dict, Optional, Any
+from .base_trainer import BaseTrainer
 
 
-class SBTrainer:
+class SBTrainer(BaseTrainer):
     """
-    Trainer for Schrödinger Bridge model
+    Trainer for Schrödinger Bridge models.
+    
+    Customizations:
+    - process_batch_data(): Extract consecutive time pairs
+    - compute_batch_loss(): Compute SB loss with drift field
+    - _needs_grad_for_eval(): Return True (SB needs gradients for drift computation)
     """
     
     def __init__(
@@ -43,301 +45,122 @@ class SBTrainer:
             output_dir: Output directory for checkpoints
             weight_decay: Weight decay for regularization
             grad_clip_norm: Gradient clipping norm
-            optimizer_kwargs: Additional optimizer parameters (betas, eps, etc.)
-            scheduler_config: Scheduler configuration (type, parameters)
+            optimizer_kwargs: Additional optimizer parameters
+            scheduler_config: Scheduler configuration
         """
-        self.model = model.to(device)
-        self.train_loader = train_loader
-        self.test_loader = test_loader
-        self.device = device
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.grad_clip_norm = grad_clip_norm
-        
-        # Get optimizer kwargs with defaults
-        if optimizer_kwargs is None:
-            optimizer_kwargs = {}
-        
-        betas = optimizer_kwargs.get('betas', [0.9, 0.999])
-        eps = optimizer_kwargs.get('eps', 1e-8)
-        
-        # Setup optimizer with weight decay
-        self.optimizer = optim.AdamW(
-            self.model.parameters(),
-            lr=learning_rate,
+        super().__init__(
+            model=model,
+            train_loader=train_loader,
+            test_loader=test_loader,
+            learning_rate=learning_rate,
+            device=device,
+            output_dir=output_dir,
             weight_decay=weight_decay,
-            betas=tuple(betas),
-            eps=eps
+            grad_clip_norm=grad_clip_norm,
+            optimizer_kwargs=optimizer_kwargs,
+            scheduler_config=scheduler_config
         )
-        
-        # Setup learning rate scheduler based on config
-        if scheduler_config is None:
-            scheduler_config = {}
-        
-        scheduler_type = scheduler_config.get('type', 'reduce_on_plateau')
-        
-        if scheduler_type == 'cosine':
-            T_max = scheduler_config.get('T_max', 200)
-            eta_min = scheduler_config.get('eta_min', 1e-6)
-            self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
-                self.optimizer,
-                T_max=T_max,
-                eta_min=eta_min
-            )
-            self.scheduler_type = 'cosine'
-        elif scheduler_type == 'reduce_on_plateau':
-            patience = scheduler_config.get('patience', 10)
-            factor = scheduler_config.get('factor', 0.5)
-            min_lr = scheduler_config.get('min_lr', 1e-6)
-            self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-                self.optimizer,
-                mode='min',
-                factor=factor,
-                patience=patience,
-                min_lr=min_lr
-            )
-            self.scheduler_type = 'plateau'
-        else:
-            self.scheduler = None
-            self.scheduler_type = 'none'
-        
-        # Training history
-        self.history = {
-            'train_loss': [],
-            'test_loss': [],
-            'learning_rate': []
-        }
-        
-        self.best_test_loss = float('inf')
-        self.patience_counter = 0
     
-    def train_epoch(self) -> float:
-        """Train for one epoch"""
-        self.model.train()
-        total_loss = 0.0
-        n_batches = 0
-        
-        pbar = tqdm(self.train_loader, desc='Training')
-        for batch_idx, (X, y) in enumerate(pbar):
-            X = X.to(self.device)
-            y = y.to(self.device)
-            
-            # For SB, we need pairs of consecutive timepoints
-            # Create pairs from the batch
-            losses = []
-            
-            # Group by time labels
-            unique_times = torch.unique(y)
-            time_to_indices = {t.item(): (y == t).nonzero(as_tuple=True)[0] for t in unique_times}
-            
-            # Create consecutive pairs
-            sorted_times = sorted(time_to_indices.keys())
-            for i in range(len(sorted_times) - 1):
-                t_curr = sorted_times[i]
-                t_next = sorted_times[i + 1]
-                
-                indices_curr = time_to_indices[t_curr]
-                indices_next = time_to_indices[t_next]
-                
-                if len(indices_curr) == 0 or len(indices_next) == 0:
-                    continue
-                
-                # Match pairs (randomly if sizes differ)
-                n_pairs = min(len(indices_curr), len(indices_next))
-                if len(indices_curr) > n_pairs:
-                    indices_curr = indices_curr[torch.randperm(len(indices_curr))[:n_pairs]]
-                if len(indices_next) > n_pairs:
-                    indices_next = indices_next[torch.randperm(len(indices_next))[:n_pairs]]
-                
-                x_t = X[indices_curr]
-                x_next = X[indices_next]
-                
-                # Time values (normalized to [0, 1])
-                t = torch.full((n_pairs,), float(t_curr) / len(sorted_times), device=self.device)
-                dt = 1.0 / len(sorted_times)
-                
-                # Compute loss
-                loss = self.model.compute_loss(x_t, x_next, t, dt)
-                losses.append(loss)
-            
-            if len(losses) == 0:
-                continue
-            
-            batch_loss = torch.mean(torch.stack(losses))
-            
-            # Backward pass
-            self.optimizer.zero_grad()
-            batch_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.grad_clip_norm)
-            self.optimizer.step()
-            
-            total_loss += batch_loss.item()
-            n_batches += 1
-            
-            pbar.set_postfix({'loss': f'{batch_loss.item():.6f}'})
-        
-        return total_loss / n_batches if n_batches > 0 else 0.0
-    
-    def evaluate(self) -> float:
-        """Evaluate on test set"""
-        self.model.eval()
-        total_loss = 0.0
-        n_batches = 0
-        
-        # Note: SB model needs gradients for drift computation (autograd.grad on x),
-        # but we don't want to update model parameters, so we use torch.no_grad() 
-        # only for model parameters, not for input x
-        with torch.set_grad_enabled(True):
-            for X, y in self.test_loader:
-                X = X.to(self.device)
-                y = y.to(self.device)
-                
-                # Create pairs
-                losses = []
-                unique_times = torch.unique(y)
-                time_to_indices = {t.item(): (y == t).nonzero(as_tuple=True)[0] for t in unique_times}
-                
-                sorted_times = sorted(time_to_indices.keys())
-                for i in range(len(sorted_times) - 1):
-                    t_curr = sorted_times[i]
-                    t_next = sorted_times[i + 1]
-                    
-                    indices_curr = time_to_indices[t_curr]
-                    indices_next = time_to_indices[t_next]
-                    
-                    if len(indices_curr) == 0 or len(indices_next) == 0:
-                        continue
-                    
-                    n_pairs = min(len(indices_curr), len(indices_next))
-                    if len(indices_curr) > n_pairs:
-                        indices_curr = indices_curr[:n_pairs]
-                    if len(indices_next) > n_pairs:
-                        indices_next = indices_next[:n_pairs]
-                    
-                    x_t = X[indices_curr]
-                    x_next = X[indices_next]
-                    
-                    t = torch.full((n_pairs,), float(t_curr) / len(sorted_times), device=self.device)
-                    dt = 1.0 / len(sorted_times)
-                    
-                    # Compute loss (needs gradient for x, but not for model params)
-                    loss = self.model.compute_loss(x_t, x_next, t, dt)
-                    losses.append(loss.detach())  # Detach to avoid keeping computation graph
-                
-                if len(losses) > 0:
-                    batch_loss = torch.mean(torch.stack(losses))
-                    total_loss += batch_loss.item()
-                    n_batches += 1
-        
-        return total_loss / n_batches if n_batches > 0 else 0.0
-    
-    def train(
+    def process_batch_data(
         self,
-        epochs: int = 100,
-        early_stopping_patience: int = 10
-    ) -> Dict:
+        X: torch.Tensor,
+        y: torch.Tensor
+    ) -> Optional[Dict[str, Any]]:
         """
-        Train the model
+        Extract consecutive time pairs for SB training.
+        
+        SB models learn local dynamics between consecutive timepoints,
+        so we create pairs (x_t, x_{t+1}) from the batch.
         
         Args:
-            epochs: Number of epochs
-            early_stopping_patience: Patience for early stopping
+            X: Batch features (batch_size, d)
+            y: Batch time labels (batch_size,)
             
         Returns:
-            Training history
+            Dictionary containing pairs data, or None if no valid pairs
         """
-        print(f"\nTraining for {epochs} epochs...")
-        print(f"Device: {self.device}")
-        print(f"Output dir: {self.output_dir}")
-        
-        for epoch in range(epochs):
-            print(f"\nEpoch {epoch+1}/{epochs}")
-            print("-" * 50)
-            
-            # Train
-            train_loss = self.train_epoch()
-            self.history['train_loss'].append(train_loss)
-            
-            # Evaluate
-            test_loss = self.evaluate()
-            self.history['test_loss'].append(test_loss)
-            
-            # Learning rate scheduler step
-            prev_lr = self.optimizer.param_groups[0]['lr']
-            if self.scheduler is not None:
-                if self.scheduler_type == 'plateau':
-                    self.scheduler.step(test_loss)
-                elif self.scheduler_type == 'cosine':
-                    self.scheduler.step()
-            
-            # Learning rate
-            current_lr = self.optimizer.param_groups[0]['lr']
-            self.history['learning_rate'].append(current_lr)
-            
-            print(f"Train Loss: {train_loss:.6f}")
-            print(f"Test Loss: {test_loss:.6f}")
-            print(f"Learning Rate: {current_lr:.2e}")
-            
-            # Check if LR was reduced
-            if current_lr < prev_lr:
-                print(f"⚡ Learning rate reduced: {prev_lr:.2e} → {current_lr:.2e}")
-            
-            # Save best model
-            if test_loss < self.best_test_loss:
-                self.best_test_loss = test_loss
-                self.patience_counter = 0
-                checkpoint_path = self.output_dir / 'best_model.pt'
-                self.save_checkpoint('best_model.pt')
-                print(f"✓ New best model saved (test loss: {test_loss:.6f})")
-                print(f"  Saved to: {checkpoint_path}")
-            else:
-                self.patience_counter += 1
-                print(f"Patience: {self.patience_counter}/{early_stopping_patience}")
-            
-            # Early stopping
-            if self.patience_counter >= early_stopping_patience:
-                print(f"\nEarly stopping triggered after {epoch+1} epochs")
-                break
-            
-            # Save checkpoint every 10 epochs
-            if (epoch + 1) % 10 == 0:
-                checkpoint_name = f'checkpoint_epoch_{epoch+1}.pt'
-                checkpoint_path = self.output_dir / checkpoint_name
-                self.save_checkpoint(checkpoint_name)
-                print(f"  Checkpoint saved to: {checkpoint_path}")
-        
-        # Save final model
-        final_model_path = self.output_dir / 'final_model.pt'
-        self.save_checkpoint('final_model.pt')
-        print(f"\n✓ Final model saved to: {final_model_path}")
-        
-        # Save history
-        history_path = self.output_dir / 'training_history.json'
-        with open(history_path, 'w') as f:
-            json.dump(self.history, f, indent=2)
-        print(f"✓ Training history saved to: {history_path}")
-        
-        print(f"\n✓ Training complete!")
-        print(f"Best test loss: {self.best_test_loss:.6f}")
-        print(f"All outputs saved to: {self.output_dir}")
-        
-        return self.history
-    
-    def save_checkpoint(self, filename: str):
-        """Save model checkpoint"""
-        checkpoint = {
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'history': self.history,
-            'best_test_loss': self.best_test_loss
+        # Group by time labels
+        unique_times = torch.unique(y)
+        time_to_indices = {
+            t.item(): (y == t).nonzero(as_tuple=True)[0]
+            for t in unique_times
         }
-        torch.save(checkpoint, self.output_dir / filename)
+        
+        # Create consecutive pairs
+        sorted_times = sorted(time_to_indices.keys())
+        
+        pairs_list = []
+        for i in range(len(sorted_times) - 1):
+            t_curr = sorted_times[i]
+            t_next = sorted_times[i + 1]
+            
+            indices_curr = time_to_indices[t_curr]
+            indices_next = time_to_indices[t_next]
+            
+            if len(indices_curr) == 0 or len(indices_next) == 0:
+                continue
+            
+            # Match pairs (randomly if sizes differ)
+            n_pairs = min(len(indices_curr), len(indices_next))
+            if len(indices_curr) > n_pairs:
+                indices_curr = indices_curr[torch.randperm(len(indices_curr))[:n_pairs]]
+            if len(indices_next) > n_pairs:
+                indices_next = indices_next[torch.randperm(len(indices_next))[:n_pairs]]
+            
+            x_t = X[indices_curr]
+            x_next = X[indices_next]
+            
+            # Time values (normalized to [0, 1])
+            t = torch.full((n_pairs,), float(t_curr) / len(sorted_times), device=self.device)
+            dt = 1.0 / len(sorted_times)
+            
+            pairs_list.append({
+                'x_t': x_t,
+                'x_next': x_next,
+                't': t,
+                'dt': dt
+            })
+        
+        if len(pairs_list) == 0:
+            return None
+        
+        return {'pairs': pairs_list}
     
-    def load_checkpoint(self, filename: str):
-        """Load model checkpoint"""
-        checkpoint = torch.load(self.output_dir / filename, map_location=self.device)
-        self.model.load_state_dict(checkpoint['model_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.history = checkpoint['history']
-        self.best_test_loss = checkpoint['best_test_loss']
-        print(f"✓ Loaded checkpoint from {filename}")
+    def compute_batch_loss(
+        self,
+        batch_data: Dict[str, Any]
+    ) -> torch.Tensor:
+        """
+        Compute SB loss for all pairs in the batch.
+        
+        Args:
+            batch_data: Dictionary containing 'pairs' list
+            
+        Returns:
+            Average loss across all pairs
+        """
+        pairs_list = batch_data['pairs']
+        losses = []
+        
+        for pair_data in pairs_list:
+            loss = self.model.compute_loss(
+                x_t=pair_data['x_t'],
+                x_next=pair_data['x_next'],
+                t=pair_data['t'],
+                dt=pair_data['dt']
+            )
+            losses.append(loss)
+        
+        return torch.mean(torch.stack(losses))
+    
+    def _needs_grad_for_eval(self) -> bool:
+        """
+        SB models need gradients during evaluation for drift computation.
+        
+        The drift field is computed via autograd.grad on the input x,
+        so we need gradients enabled even during evaluation.
+        
+        Returns:
+            True
+        """
+        return True

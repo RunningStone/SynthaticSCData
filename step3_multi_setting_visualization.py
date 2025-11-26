@@ -1,184 +1,222 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Multi-Setting Visualization Script
+Multi-Setting Visualization Script (Refactored)
 
-基于已保存的generated pkl文件进行可视化对比
+基于新的模块化Analyser组件进行可视化对比。
+
+使用新的模块化架构：
+- DataManager: 数据加载
+- ModelManager: 模型加载和推理
+- EmbeddingComputer: 嵌入计算
+- MetricsPlotter: 指标可视化
+- GenerationPlotter: 生成对比可视化
 
 Usage:
-    python step2_multi_setting_visualization.py \
+    python step3_multi_setting_visualization.py \
         --base_dir /path/to/OUTPUTs/SynthaticSCData \
         --output_dir ./visualizations
 """
 
 import argparse
-import sys
-import pickle
-import json
-import yaml
 import numpy as np
-import matplotlib.pyplot as plt
-import pandas as pd
+import torch
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 import warnings
 warnings.filterwarnings('ignore')
 
-# 可视化依赖
-import phate
-from metric_learn import LMNN
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
+# 导入新的模块化组件
+from Analyser import (
+    DataManager,
+    ModelManager,
+    EmbeddingComputer,
+    MetricsPlotter,
+    GenerationPlotter
+)
 
 
-class VisualizationManager:
-    """管理多个setting的可视化对比"""
+class MultiSettingVisualizationPipeline:
+    """
+    多设置可视化管道（使用新的模块化组件）
     
-    def __init__(self, base_dir: str, output_dir: str):
+    职责：
+    - 协调各个模块化组件
+    - 实现高层次的可视化工作流
+    - 管理不同实验设置的对比
+    """
+    
+    def __init__(
+        self,
+        base_dir: str,
+        output_dir: str,
+        device: str = 'cuda',
+        random_seed: int = 42
+    ):
+        """
+        初始化可视化管道
+        
+        Args:
+            base_dir: 实验输出的基础目录
+            output_dir: 可视化结果输出目录
+            device: 计算设备
+            random_seed: 随机种子
+        """
         self.base_dir = Path(base_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.device = device
+        self.random_seed = random_seed
         
-    def load_generated_data(self, setting_path: Path, model_name: str) -> Dict:
-        """加载生成的数据"""
-        pkl_path = setting_path / 'generated' / f'{model_name}.pkl'
-        if not pkl_path.exists():
-            return None
+        # 初始化模块化组件
+        self.data_manager = DataManager()
+        self.model_manager = ModelManager(device=device)
+        self.embedding_computer = EmbeddingComputer(random_seed=random_seed)
+        self.metrics_plotter = MetricsPlotter()
+        self.generation_plotter = GenerationPlotter()
         
-        with open(pkl_path, 'rb') as f:
-            return pickle.load(f)
+        # 设置随机种子
+        np.random.seed(random_seed)
+        torch.manual_seed(random_seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(random_seed)
     
-    def load_metrics(self, setting_path: Path) -> Dict:
-        """加载评估指标"""
+    def _print_section(self, title: str, width: int = 80):
+        """打印格式化的章节标题"""
+        print("\n" + "="*width)
+        print(title)
+        print("="*width)
+    
+    def load_setting_data(
+        self,
+        setting_path: Path,
+        model_names: List[str]
+    ) -> Dict:
+        """
+        加载单个setting的数据
+        
+        Args:
+            setting_path: Setting目录路径
+            model_names: 要加载的模型名称列表
+        
+        Returns:
+            包含metrics和generated data的字典
+        """
+        result = {
+            'metrics': {},
+            'generated': {}
+        }
+        
+        # 加载metrics
         results_path = setting_path / 'results.json'
-        if not results_path.exists():
-            return {}
+        if results_path.exists():
+            all_metrics = self.data_manager.load_metrics_json(results_path)
+            for model_name in model_names:
+                if model_name in all_metrics:
+                    result['metrics'][model_name] = all_metrics[model_name]
         
-        with open(results_path, 'r') as f:
-            return json.load(f)
+        # 加载generated data
+        for model_name in model_names:
+            pkl_path = setting_path / 'generated' / f'{model_name}.pkl'
+            gen_data = self.data_manager.load_generated_pkl(pkl_path)
+            if gen_data is not None:
+                result['generated'][model_name] = gen_data
+        
+        return result
     
-    def plot_metrics_comparison(self, metrics_dict: Dict[str, Dict], 
-                               title: str, save_prefix: str):
-        """绘制评估指标对比图"""
-        metric_names = [
-            'test_loss', 'frechet_distance', 'mae', 'pcc',
-            'wasserstein_distance', 'mmd', 'js_divergence',
-            'correlation_structure_corr', 'r2_mean', 'correlation_frobenius_diff'
-        ]
+    def visualize_comparison(
+        self,
+        settings_dict: Dict[str, Path],
+        model_names: List[str],
+        title: str,
+        save_prefix: str
+    ):
+        """
+        可视化多个settings的对比
         
-        metric_titles = [
-            'Test Loss', 'Fréchet Distance', 'MAE', 'PCC',
-            'Wasserstein Distance', 'MMD', 'JS Divergence',
-            'Correlation Structure', 'R² Mean', 'Correlation Frobenius Diff'
-        ]
+        Args:
+            settings_dict: Setting名称到路径的映射
+            model_names: 要对比的模型名称列表
+            title: 图表标题
+            save_prefix: 保存文件的前缀
+        """
+        self._print_section(f"Visualizing: {title}")
         
-        fig, axes = plt.subplots(3, 4, figsize=(20, 12))
-        axes = axes.flatten()
+        # 收集所有metrics和generated data
+        all_metrics = {}
+        all_generated = {}
         
-        for idx, (metric_name, metric_title) in enumerate(zip(metric_names, metric_titles)):
-            if idx >= len(axes):
-                break
+        for setting_name, setting_path in settings_dict.items():
+            if not setting_path.exists():
+                print(f"  ⚠️  {setting_name} not found: {setting_path}")
+                continue
             
-            ax = axes[idx]
+            data = self.load_setting_data(setting_path, model_names)
             
-            # 提取数据
-            labels = []
-            values = []
+            # 合并metrics
+            for model_name, metrics in data['metrics'].items():
+                key = f"{setting_name}-{model_name}"
+                all_metrics[key] = metrics
             
-            for model_key, metrics in metrics_dict.items():
-                if 'evaluation' in metrics:
-                    metrics = metrics['evaluation']
-                
-                if metric_name in metrics:
-                    labels.append(model_key)
-                    values.append(metrics[metric_name])
-            
-            if values:
-                bars = ax.bar(range(len(values)), values)
-                ax.set_xticks(range(len(labels)))
-                ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=8)
-                ax.set_ylabel(metric_title)
-                ax.set_title(metric_title, fontweight='bold')
-                ax.grid(axis='y', alpha=0.3)
-                
-                # 标注数值
-                for i, v in enumerate(values):
-                    ax.text(i, v, f'{v:.3f}', ha='center', va='bottom', fontsize=7)
-            else:
-                ax.text(0.5, 0.5, 'No Data', ha='center', va='center', 
-                       transform=ax.transAxes, fontsize=12)
-                ax.set_title(metric_title, fontweight='bold')
+            # 合并generated data
+            for model_name, gen_data in data['generated'].items():
+                key = f"{setting_name}-{model_name}"
+                all_generated[key] = gen_data
         
-        # 隐藏多余的子图
-        for idx in range(len(metric_names), len(axes)):
-            axes[idx].axis('off')
+        if not all_metrics:
+            print(f"  ⚠️  No data found for {title}")
+            return
         
-        plt.suptitle(title, fontsize=16, fontweight='bold', y=0.995)
-        plt.tight_layout()
+        # 绘制metrics对比
+        print(f"\n  Plotting metrics comparison...")
+        self.metrics_plotter.plot_metrics_comparison(
+            all_metrics,
+            title=f"{title} - Metrics Comparison",
+            save_prefix=save_prefix,
+            output_dir=self.output_dir
+        )
+        print(f"  ✓ Metrics saved: {save_prefix}.png/pdf/csv")
         
-        # 保存
-        png_path = self.output_dir / f'{save_prefix}_metrics.png'
-        pdf_path = self.output_dir / f'{save_prefix}_metrics.pdf'
-        plt.savefig(png_path, dpi=300, bbox_inches='tight')
-        plt.savefig(pdf_path, bbox_inches='tight')
-        plt.close()
-        
-        print(f"  ✓ Metrics comparison saved: {png_path}")
-        
-        # 保存CSV
-        csv_data = []
-        for model_key, metrics in metrics_dict.items():
-            if 'evaluation' in metrics:
-                metrics = metrics['evaluation']
-            row = {'model': model_key}
-            for metric_name in metric_names:
-                row[metric_name] = metrics.get(metric_name, np.nan)
-            csv_data.append(row)
-        
-        df = pd.DataFrame(csv_data)
-        csv_path = self.output_dir / f'{save_prefix}_metrics.csv'
-        df.to_csv(csv_path, index=False)
-        print(f"  ✓ Metrics CSV saved: {csv_path}")
+        # 绘制generation对比（如果有generated data）
+        if all_generated:
+            print(f"\n  Plotting generation comparison...")
+            self._plot_generation_comparison(
+                all_generated,
+                title=f"{title} - Generation Comparison",
+                save_prefix=save_prefix
+            )
     
-    def compute_embeddings(self, all_data: np.ndarray, all_labels: np.ndarray) -> Tuple:
-        """计算PHATE和LMNN+PCA嵌入"""
-        print("  Computing embeddings...")
+    def _plot_generation_comparison(
+        self,
+        generated_dict: Dict[str, Dict],
+        title: str,
+        save_prefix: str
+    ):
+        """
+        绘制生成数据对比
         
-        # PHATE
-        phate_op = phate.PHATE(n_components=2, random_state=42, n_jobs=-1)
-        phate_embedding = phate_op.fit_transform(all_data)
-        
-        # LMNN + PCA
-        scaler = StandardScaler()
-        data_scaled = scaler.fit_transform(all_data)
-        
-        lmnn = LMNN(n_components=min(50, all_data.shape[1]), random_state=42)
-        data_lmnn = lmnn.fit_transform(data_scaled, all_labels)
-        
-        pca = PCA(n_components=2, random_state=42)
-        lmnn_pca_embedding = pca.fit_transform(data_lmnn)
-        
-        return phate_embedding, lmnn_pca_embedding
-    
-    def plot_generation_comparison(self, data_dict: Dict[str, Dict],
-                                  title: str, save_prefix: str):
-        """绘制生成数据对比可视化"""
-        print(f"\n  Plotting generation comparison: {title}")
-        
+        Args:
+            generated_dict: 模型名称到生成数据的映射
+            title: 图表标题
+            save_prefix: 保存文件前缀
+        """
         # 收集所有真实数据用于计算嵌入
         all_real_data = []
         all_real_labels = []
+        time_labels = None
         
-        for model_key, data in data_dict.items():
+        for model_key, data in generated_dict.items():
             if data is not None and 'real_data' in data:
                 all_real_data.append(data['real_data'])
                 all_real_labels.append(data['real_labels'])
+                if time_labels is None and 'time_labels' in data:
+                    time_labels = data['time_labels']
         
         if not all_real_data:
-            print("  ⚠️  No data available for visualization")
+            print("  ⚠️  No real data available for visualization")
             return
         
-        # 合并真实数据（去重）
+        # 合并真实数据
         all_real_data = np.vstack(all_real_data)
         all_real_labels = np.concatenate(all_real_labels)
         
@@ -188,284 +226,142 @@ class VisualizationManager:
         all_real_labels = all_real_labels[unique_indices]
         
         # 计算嵌入
-        phate_emb, lmnn_pca_emb = self.compute_embeddings(all_real_data, all_real_labels)
+        print("    Computing embeddings...")
+        embeddings_dict = self.embedding_computer.compute_all_embeddings(
+            all_real_data, all_real_labels
+        )
         
-        # 为每个模型绘制可视化
-        for method_name, embedding in [('PHATE', phate_emb), ('LMNN-PCA', lmnn_pca_emb)]:
-            n_models = len(data_dict)
-            n_cols = min(3, n_models + 1)
-            n_rows = (n_models + 1 + n_cols - 1) // n_cols
+        # 为每个模型的生成数据计算嵌入
+        for embedding_type in ['phate', 'lmnn_pca']:
+            print(f"    Processing {embedding_type.upper()} embeddings...")
             
-            fig, axes = plt.subplots(n_rows, n_cols, figsize=(6*n_cols, 5*n_rows))
-            if n_rows == 1 and n_cols == 1:
-                axes = np.array([[axes]])
-            elif n_rows == 1:
-                axes = axes.reshape(1, -1)
-            elif n_cols == 1:
-                axes = axes.reshape(-1, 1)
+            model_embeddings = {'original': embeddings_dict[embedding_type]}
             
-            axes = axes.flatten()
-            
-            # 第一个子图：所有真实数据
-            ax = axes[0]
-            scatter = ax.scatter(embedding[:, 0], embedding[:, 1], 
-                               c=all_real_labels, cmap='viridis', 
-                               s=10, alpha=0.6)
-            ax.set_title('Real Data (All)', fontweight='bold', fontsize=12)
-            ax.set_xlabel(f'{method_name} 1')
-            ax.set_ylabel(f'{method_name} 2')
-            plt.colorbar(scatter, ax=ax, label='Time')
-            
-            # 为每个模型绘制真实+生成数据
-            for idx, (model_key, data) in enumerate(data_dict.items()):
-                ax = axes[idx + 1]
-                
-                if data is None or 'generated_data' is None:
-                    ax.text(0.5, 0.5, 'No Data', ha='center', va='center',
-                           transform=ax.transAxes, fontsize=12)
-                    ax.set_title(model_key, fontweight='bold')
-                    continue
-                
-                # 绘制真实数据
-                ax.scatter(embedding[:, 0], embedding[:, 1],
-                          c='lightgray', s=10, alpha=0.3, label='Real')
-                
-                # 生成数据需要转换到相同的嵌入空间
-                if data['generated_data'] is not None:
+            for model_key, data in generated_dict.items():
+                if data is not None and 'generated_data' in data:
                     gen_data = data['generated_data']
-                    
-                    # 将生成数据添加到总数据中进行转换
-                    combined_data = np.vstack([all_real_data, gen_data])
-                    
-                    if method_name == 'PHATE':
-                        phate_op_temp = phate.PHATE(n_components=2, random_state=42, n_jobs=-1)
-                        combined_emb = phate_op_temp.fit_transform(combined_data)
-                        gen_emb = combined_emb[-len(gen_data):]
-                    else:
-                        scaler_temp = StandardScaler()
-                        combined_scaled = scaler_temp.fit_transform(combined_data)
-                        lmnn_temp = LMNN(n_components=min(50, combined_data.shape[1]), random_state=42)
-                        combined_lmnn = lmnn_temp.fit_transform(combined_scaled, 
-                                                               np.concatenate([all_real_labels, 
-                                                                             np.zeros(len(gen_data))]))
-                        pca_temp = PCA(n_components=2, random_state=42)
-                        combined_pca = pca_temp.fit_transform(combined_lmnn)
-                        gen_emb = combined_pca[-len(gen_data):]
-                    
-                    ax.scatter(gen_emb[:, 0], gen_emb[:, 1],
-                              c='red', s=20, alpha=0.6, label='Generated')
-                
-                ax.set_title(model_key, fontweight='bold', fontsize=10)
-                ax.set_xlabel(f'{method_name} 1')
-                ax.set_ylabel(f'{method_name} 2')
-                ax.legend()
+                    if gen_data is not None:
+                        # Transform generated data
+                        if embedding_type == 'phate':
+                            gen_emb = self.embedding_computer.transform_phate(gen_data)
+                        else:
+                            gen_emb = self.embedding_computer.transform_lmnn_pca(gen_data)
+                        model_embeddings[model_key] = gen_emb
             
-            # 隐藏多余的子图
-            for idx in range(len(data_dict) + 1, len(axes)):
-                axes[idx].axis('off')
-            
-            plt.suptitle(f'{title} - {method_name}', fontsize=16, fontweight='bold')
-            plt.tight_layout()
-            
-            # 保存
-            method_suffix = method_name.lower().replace('-', '_').replace('+', '_')
-            png_path = self.output_dir / f'{save_prefix}_{method_suffix}.png'
-            pdf_path = self.output_dir / f'{save_prefix}_{method_suffix}.pdf'
-            plt.savefig(png_path, dpi=300, bbox_inches='tight')
-            plt.savefig(pdf_path, bbox_inches='tight')
-            plt.close()
-            
-            print(f"  ✓ {method_name} visualization saved: {png_path}")
+            # 绘制对比图
+            self.generation_plotter.plot_comparison_grid(
+                model_embeddings,
+                embeddings_dict[embedding_type],
+                all_real_labels,
+                time_labels or [str(i) for i in range(int(all_real_labels.max()) + 1)],
+                embedding_type,
+                title,
+                save_prefix,
+                self.output_dir
+            )
+            print(f"    ✓ {embedding_type.upper()} saved: {save_prefix}_{embedding_type}.png/pdf")
     
     def visualize_emt_process_comparison(self):
         """a) EMT过程建模对比：Setting1, Setting2, Setting3"""
-        print("\n" + "="*80)
-        print("(a) EMT Process Modeling Comparison")
-        print("="*80)
-        
         settings = {
-            'Setting1': 'EMT_Part1_Setting1',
-            'Setting2': 'EMT_Part1_Setting2',
-            'Setting3': 'EMT_Part1_Setting3'
+            'Setting1': self.base_dir / 'EMT_Part1_Setting1',
+            'Setting2': self.base_dir / 'EMT_Part1_Setting2',
+            'Setting3': self.base_dir / 'EMT_Part1_Setting3'
         }
         
-        # 收集指标
-        metrics_dict = {}
-        data_dict = {}
+        model_names = ['sb_mlplus', 'ot', 'vae', 'batch_ot']
         
-        for setting_name, folder_name in settings.items():
-            setting_path = self.base_dir / folder_name
-            if not setting_path.exists():
-                print(f"  ⚠️  {setting_name} not found: {setting_path}")
-                continue
-            
-            metrics = self.load_metrics(setting_path)
-            
-            for model_name in metrics.keys():
-                key = f"{setting_name}-{model_name}"
-                metrics_dict[key] = metrics[model_name]
-                
-                # 加载生成数据
-                gen_data = self.load_generated_data(setting_path, model_name)
-                data_dict[key] = gen_data
-        
-        # 绘制指标对比
-        self.plot_metrics_comparison(
-            metrics_dict,
-            "EMT Process Modeling: Settings 1-3 Comparison",
-            "a_emt_process"
-        )
-        
-        # 绘制生成数据可视化
-        self.plot_generation_comparison(
-            data_dict,
-            "EMT Process Modeling: Generation Comparison",
-            "a_emt_process"
+        self.visualize_comparison(
+            settings,
+            model_names,
+            title="(a) EMT Process Modeling: Settings 1-3",
+            save_prefix="a_emt_process"
         )
     
     def visualize_ablation_comparison(self):
         """b) 时间点消融：Setting2 vs Setting4"""
-        print("\n" + "="*80)
-        print("(b) Timepoint Ablation Comparison")
-        print("="*80)
-        
-        # Setting2的SB_MLPlus
-        setting2_path = self.base_dir / 'EMT_Part1_Setting2'
-        
-        # Setting4的三个消融实验
-        setting4_paths = {
-            'Remove_8h': self.base_dir / 'EMT_Part1_Setting4' / 'experiment_EMT_Part1_setting4_ablation_remove_8h',
-            'Remove_1d': self.base_dir / 'EMT_Part1_Setting4' / 'experiment_EMT_Part1_setting4_ablation_remove_1d',
-            'Remove_3d': self.base_dir / 'EMT_Part1_Setting4' / 'experiment_EMT_Part1_setting4_ablation_remove_3d'
+        settings = {
+            'Setting2': self.base_dir / 'EMT_Part1_Setting2',
+            'Setting4-Remove_8h': self.base_dir / 'EMT_Part1_Setting4' / 'experiment_EMT_Part1_setting4_ablation_remove_8h',
+            'Setting4-Remove_1d': self.base_dir / 'EMT_Part1_Setting4' / 'experiment_EMT_Part1_setting4_ablation_remove_1d',
+            'Setting4-Remove_3d': self.base_dir / 'EMT_Part1_Setting4' / 'experiment_EMT_Part1_setting4_ablation_remove_3d'
         }
         
-        metrics_dict = {}
-        data_dict = {}
+        model_names = ['sb_mlplus']
         
-        # Setting2
-        if setting2_path.exists():
-            metrics = self.load_metrics(setting2_path)
-            if 'sb_mlplus' in metrics:
-                metrics_dict['Setting2-sb_mlplus'] = metrics['sb_mlplus']
-                data_dict['Setting2-sb_mlplus'] = self.load_generated_data(setting2_path, 'sb_mlplus')
-        
-        # Setting4消融
-        for ablation_name, ablation_path in setting4_paths.items():
-            if ablation_path.exists():
-                metrics = self.load_metrics(ablation_path)
-                if 'sb_mlplus' in metrics:
-                    key = f"Setting4-{ablation_name}"
-                    metrics_dict[key] = metrics['sb_mlplus']
-                    data_dict[key] = self.load_generated_data(ablation_path, 'sb_mlplus')
-        
-        # 绘制
-        self.plot_metrics_comparison(
-            metrics_dict,
-            "Timepoint Ablation: Setting2 vs Setting4",
-            "b_ablation"
-        )
-        
-        self.plot_generation_comparison(
-            data_dict,
-            "Timepoint Ablation: Generation Comparison",
-            "b_ablation"
+        self.visualize_comparison(
+            settings,
+            model_names,
+            title="(b) Timepoint Ablation: Setting2 vs Setting4",
+            save_prefix="b_ablation"
         )
     
     def visualize_shuffle_comparison(self):
         """c) 时间点打乱：Setting2 vs Setting5"""
-        print("\n" + "="*80)
-        print("(c) Timepoint Shuffle Comparison")
-        print("="*80)
-        
         settings = {
             'Setting2': self.base_dir / 'EMT_Part1_Setting2',
             'Setting5_Shuffled': self.base_dir / 'EMT_Part1_Setting5_Shuffled'
         }
         
-        metrics_dict = {}
-        data_dict = {}
+        model_names = ['sb_mlplus']
         
-        for setting_name, setting_path in settings.items():
-            if setting_path.exists():
-                metrics = self.load_metrics(setting_path)
-                if 'sb_mlplus' in metrics:
-                    key = f"{setting_name}-sb_mlplus"
-                    metrics_dict[key] = metrics['sb_mlplus']
-                    data_dict[key] = self.load_generated_data(setting_path, 'sb_mlplus')
-        
-        # 绘制
-        self.plot_metrics_comparison(
-            metrics_dict,
-            "Timepoint Shuffle: Setting2 vs Setting5",
-            "c_shuffle"
-        )
-        
-        self.plot_generation_comparison(
-            data_dict,
-            "Timepoint Shuffle: Generation Comparison",
-            "c_shuffle"
+        self.visualize_comparison(
+            settings,
+            model_names,
+            title="(c) Timepoint Shuffle: Setting2 vs Setting5",
+            save_prefix="c_shuffle"
         )
     
     def visualize_interpolation_comparison(self):
         """d) 线性插值：Setting2 vs Setting6"""
-        print("\n" + "="*80)
-        print("(d) Linear Interpolation Comparison")
-        print("="*80)
-        
         settings = {
             'Setting2': self.base_dir / 'EMT_Part1_Setting2',
             'Setting6_Interpolated': self.base_dir / 'EMT_Part1_Setting6'
         }
         
-        models = ['sb_mlplus', 'batch_ot']
+        model_names = ['sb_mlplus', 'batch_ot']
         
-        metrics_dict = {}
-        data_dict = {}
-        
-        for setting_name, setting_path in settings.items():
-            if setting_path.exists():
-                metrics = self.load_metrics(setting_path)
-                for model_name in models:
-                    if model_name in metrics:
-                        key = f"{setting_name}-{model_name}"
-                        metrics_dict[key] = metrics[model_name]
-                        data_dict[key] = self.load_generated_data(setting_path, model_name)
-        
-        # 绘制
-        self.plot_metrics_comparison(
-            metrics_dict,
-            "Linear Interpolation: Setting2 vs Setting6",
-            "d_interpolation"
-        )
-        
-        self.plot_generation_comparison(
-            data_dict,
-            "Linear Interpolation: Generation Comparison",
-            "d_interpolation"
+        self.visualize_comparison(
+            settings,
+            model_names,
+            title="(d) Linear Interpolation: Setting2 vs Setting6",
+            save_prefix="d_interpolation"
         )
     
     def run_all_visualizations(self):
         """运行所有可视化"""
-        print("\n" + "="*80)
-        print("Multi-Setting Visualization Pipeline")
-        print("="*80)
+        self._print_section("Multi-Setting Visualization Pipeline")
         print(f"Base directory: {self.base_dir}")
         print(f"Output directory: {self.output_dir}")
+        print(f"Device: {self.device}")
         
+        # 运行各个对比
         self.visualize_emt_process_comparison()
         self.visualize_ablation_comparison()
         self.visualize_shuffle_comparison()
         self.visualize_interpolation_comparison()
         
-        print("\n" + "="*80)
-        print("All Visualizations Complete!")
-        print("="*80)
+        self._print_section("All Visualizations Complete!")
         print(f"Results saved to: {self.output_dir}")
+        print("\nGenerated files:")
+        print("  - a_emt_process.png/pdf/csv")
+        print("  - a_emt_process_phate.png/pdf")
+        print("  - a_emt_process_lmnn_pca.png/pdf")
+        print("  - b_ablation.png/pdf/csv")
+        print("  - b_ablation_phate.png/pdf")
+        print("  - b_ablation_lmnn_pca.png/pdf")
+        print("  - c_shuffle.png/pdf/csv")
+        print("  - c_shuffle_phate.png/pdf")
+        print("  - c_shuffle_lmnn_pca.png/pdf")
+        print("  - d_interpolation.png/pdf/csv")
+        print("  - d_interpolation_phate.png/pdf")
+        print("  - d_interpolation_lmnn_pca.png/pdf")
 
 
 def main():
+    """主函数"""
     parser = argparse.ArgumentParser(
-        description='Multi-setting visualization based on saved generated data'
+        description='Multi-setting visualization using new modular components'
     )
     
     parser.add_argument(
@@ -480,15 +376,30 @@ def main():
         required=True,
         help='Output directory for visualizations'
     )
+    parser.add_argument(
+        '--device',
+        type=str,
+        default='cuda',
+        help='Device for computation (cuda or cpu)'
+    )
+    parser.add_argument(
+        '--seed',
+        type=int,
+        default=42,
+        help='Random seed for reproducibility'
+    )
     
     args = parser.parse_args()
     
-    manager = VisualizationManager(
+    # 创建并运行可视化管道
+    pipeline = MultiSettingVisualizationPipeline(
         base_dir=args.base_dir,
-        output_dir=args.output_dir
+        output_dir=args.output_dir,
+        device=args.device,
+        random_seed=args.seed
     )
     
-    manager.run_all_visualizations()
+    pipeline.run_all_visualizations()
 
 
 if __name__ == '__main__':

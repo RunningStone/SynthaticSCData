@@ -1,0 +1,289 @@
+# ============================================================================
+# Data Configuration: EMT Cook Dataset with Removal Labels
+# ============================================================================
+# This file defines the data source, label mappings, and setting-specific
+# configurations for training/testing data splits.
+# 
+# New features:
+# - Includes removal timepoints (8h_rm, 1d_rm, 3d_rm)
+# - Modified train/test split (Mix1+Mix3+Mix4 for train, Mix2 for test)
+# - New setting3 for start-middle-end trajectory learning
+
+# Raw data file information
+data_source:
+  file_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/DATAs/EMT/2024_12_04_Cook_emt_dataset_with_removal.h5ad"
+  obs_time_column: "Ground_truth"  # Column name in adata.obs for time labels
+  
+  # Time label order (cells with labels not in this list will be filtered out with warning)
+  # Forward EMT: 0d → 8h → 1d → 3d → 7d
+  # Reversal: 7d → 8h_rm → 1d_rm → 3d_rm (after removing stimulus)
+  time_labels_order: ["0d", "8h", "1d", "3d", "7d"]
+  
+  # Time intervals between consecutive time points (in hours)
+  time_intervals:
+    # Forward EMT progression
+    "0d-8h": 8
+    "8h-1d": 16
+    "1d-3d": 48
+    "3d-7d": 96
+    # Reversal after stimulus removal
+    "7d-8h_rm": 8
+    "8h_rm-1d_rm": 16
+    "1d_rm-3d_rm": 48
+  
+  # Feature selection
+  n_hvg: 1000  # Number of highly variable genes to select
+
+# Biology-based train/test split
+# Modified to use Mix1+Mix3+Mix4 for training, Mix2 for testing
+biology_split:
+  column_name: "batches"  # Column in adata.obs for split
+  train_values: ["Mix1", "Mix3", "Mix2"]  # Values for training set
+  test_values: ["Mix2"]  # Values for test set
+  train_ratio: 0.8  # Only used if column_name is null (random split)
+
+# ============================================================================
+# Part 1: Forward EMT Only
+# ============================================================================
+
+# Setting 1: Boundary time points only (0d and 7d)
+setting1:
+  name: "Part1-Setting1: Boundary (Forward EMT)"
+  description: "Use only boundary time points: 0d (start) and 7d (peak EMT)"
+  
+  # Time points to include (must be in time_labels_order)
+  time_points: ["0d", "7d"]
+  
+  # Number of cells per time point (default, can be overridden in experiment config)
+  # Will be calculated by step0_calculate_data_split_params.py
+  cells_per_timepoint: 4487  # Updated: 2024-11-18
+  
+  # Validation: check if sufficient cells exist
+  min_cells_required: 1000  # Error if any time point has fewer cells
+  
+  # Balance strategy
+  balance_strategy: "per_timepoint"  # Each time point has cells_per_timepoint samples
+
+# Setting 2: All forward EMT time points
+setting2:
+  name: "Part1-Setting2: Full Trajectory (Forward EMT)"
+  description: "Use all forward EMT time points: 0d → 8h → 1d → 3d → 7d"
+  
+  # Time points to include (must be in time_labels_order)
+  time_points: ["0d", "8h", "1d", "3d", "7d"]
+  
+  # Total cells or cells per time point
+  # Will be calculated by step0_calculate_data_split_params.py
+  total_cells: 8974  # Updated: 2024-11-18
+  cells_per_timepoint: null  # If null, use total_cells; if set, use this instead
+  
+  # Validation
+  min_cells_required: 1000  # Error if any time point has fewer cells
+  
+  # Balance strategy: "total" or "per_timepoint"
+  # - "total": Distribute total_cells evenly across time points
+  # - "per_timepoint": Each time point has cells_per_timepoint samples
+  balance_strategy: "total"
+
+# Setting 3: Key time points (Forward EMT only)
+setting3:
+  name: "Part1-Setting3: Key Timepoints (Forward EMT)"
+  description: "Use key time points: 0d (start), 8h (early response), 7d (peak EMT)"
+  
+  # Time points to include (must be in time_labels_order)
+  # 0d: baseline state
+  # 8h: early EMT response
+  # 7d: peak EMT state
+  time_points: ["0d", "8h", "7d"]
+  
+  # Total cells or cells per time point
+  # Will be calculated by step0_calculate_data_split_params.py
+  total_cells: 8974  # Updated: 2024-11-18
+  cells_per_timepoint: null  # If null, use total_cells; if set, use this instead
+  
+  # Validation
+  min_cells_required: 1000  # Error if any time point has fewer cells
+  
+  # Balance strategy
+  balance_strategy: "total"  # Distribute total_cells evenly across 3 timepoints
+
+# ============================================================================
+# Experiment 4: Ablation Study Settings (Part1 - Forward EMT)
+# ============================================================================
+
+# Ablation 1: Remove 8h timepoint
+setting4_ablation_remove_8h:
+  name: "Part1-Exp4-Ablation: Remove 8h"
+  description: "Ablation study: remove 8h to assess its marginal contribution"
+  
+  time_points: ["0d", "1d", "3d", "7d"]
+  
+  total_cells: 8974  # Same as Setting2 for fair comparison
+  cells_per_timepoint: null
+  
+  min_cells_required: 1000
+  balance_strategy: "total"  # 8974 / 4 = 2243.5 cells per timepoint
+
+# Ablation 2: Remove 1d timepoint
+setting4_ablation_remove_1d:
+  name: "Part1-Exp4-Ablation: Remove 1d"
+  description: "Ablation study: remove 1d to assess its marginal contribution"
+  
+  time_points: ["0d", "8h", "3d", "7d"]
+  
+  total_cells: 8974  # Same as Setting2 for fair comparison
+  cells_per_timepoint: null
+  
+  min_cells_required: 1000
+  balance_strategy: "total"  # 8974 / 4 = 2243.5 cells per timepoint
+
+# Ablation 3: Remove 3d timepoint
+setting4_ablation_remove_3d:
+  name: "Part1-Exp4-Ablation: Remove 3d"
+  description: "Ablation study: remove 3d to assess its marginal contribution"
+  
+  time_points: ["0d", "8h", "1d", "7d"]
+  
+  total_cells: 8974  # Same as Setting2 for fair comparison
+  cells_per_timepoint: null
+  
+  min_cells_required: 1000
+  balance_strategy: "total"  # 8974 / 4 = 2243.5 cells per timepoint
+
+# ============================================================================
+# Part 2: Forward EMT + Reversal
+# ============================================================================
+
+# Setting 4: Full trajectory with reversal
+setting4:
+  name: "Part2-Setting1: Full Trajectory (Forward + Reversal)"
+  description: "Use all 8 timepoints: forward EMT (0d→7d) and reversal (7d→3d_rm)"
+  
+  # Time points to include (must be in time_labels_order)
+  # Forward: 0d → 8h → 1d → 3d → 7d
+  # Reversal: 7d → 8h_rm → 1d_rm → 3d_rm
+  time_points: ["0d", "8h", "1d", "3d", "7d", "8h_rm", "1d_rm", "3d_rm"]
+  
+  # Total cells or cells per time point
+  # Will be calculated by step0_calculate_data_split_params.py
+  total_cells: 8974  # Updated: 2024-11-18
+  cells_per_timepoint: null  # If null, use total_cells; if set, use this instead
+  
+  # Validation
+  min_cells_required: 1000  # Error if any time point has fewer cells
+  
+  # Balance strategy
+  balance_strategy: "total"  # Distribute total_cells evenly across 8 timepoints
+
+# Setting 5: Boundary with reversal endpoint
+setting5:
+  name: "Part2-Setting2: Boundary (Start + Reversal Endpoint)"
+  description: "Use only start (0d) and reversal endpoint (3d_rm) - 2 timepoints"
+  
+  # Time points to include (must be in time_labels_order)
+  # 0d: baseline state
+  # 3d_rm: reversal state after stimulus removal (endpoint)
+  time_points: ["0d", "3d_rm"]
+  
+  # Number of cells per time point (default, can be overridden in experiment config)
+  # Will be calculated by step0_calculate_data_split_params.py
+  cells_per_timepoint: 4487  # Updated: 2024-11-18
+  
+  # Validation: check if sufficient cells exist
+  min_cells_required: 1000  # Error if any time point has fewer cells
+  
+  # Balance strategy
+  balance_strategy: "per_timepoint"  # Each time point has cells_per_timepoint samples
+
+# Setting 6: Key points with reversal
+setting6:
+  name: "Part2-Setting3: Key Timepoints (Peak + Reversal)"
+  description: "Use key points: 0d (start), 7d (peak EMT), 3d_rm (reversal endpoint)"
+  
+  # Time points to include (must be in time_labels_order)
+  # 0d: baseline state
+  # 7d: peak EMT state (middle point)
+  # 3d_rm: reversal state after stimulus removal (endpoint)
+  time_points: ["0d", "7d", "3d_rm"]
+  
+  # Total cells or cells per time point
+  # Will be calculated by step0_calculate_data_split_params.py
+  total_cells: 8974  # Updated: 2024-11-18
+  cells_per_timepoint: null  # If null, use total_cells; if set, use this instead
+  
+  # Validation
+  min_cells_required: 1000  # Error if any time point has fewer cells
+  
+  # Balance strategy
+  balance_strategy: "total"  # Distribute total_cells evenly across 3 timepoints
+
+# ============================================================================
+# Experiment 6: Interpolated Data Setting (Part1 - Forward EMT)
+# ============================================================================
+
+# Setting 6 (Interpolated): Boundary (real) + Interpolated intermediate points
+setting6_interpolated:
+  name: "Part1-Exp6: Interpolated Intermediate States"
+  description: "Boundary points (0d, 7d) are real; intermediate points (8h, 1d, 3d) are linearly interpolated"
+  
+  # Time points to include
+  time_points: ["0d", "8h", "1d", "3d", "7d"]
+  
+  # Total cells
+  total_cells: 3750  # 5 timepoints × 750 = 3,750 cells
+  cells_per_timepoint: null
+  
+  # Validation
+  min_cells_required: 750
+  
+  # Balance strategy
+  balance_strategy: "total"
+  
+  # Experiment 6 specific parameters
+  interpolation_params:
+    boundary_timepoints: ["0d", "7d"]  # Real data
+    intermediate_timepoints: ["8h", "1d", "3d"]  # To be interpolated
+    n_samples_per_timepoint: 750
+    time_to_hours:
+      "0d": 0.0
+      "8h": 8.0
+      "1d": 24.0
+      "3d": 72.0
+      "7d": 168.0
+
+# ============================================================================
+# Experiment 7: Entropy Evolution Analysis (Part1 - Forward EMT)
+# ============================================================================
+
+# Setting 7: Same as Setting2 but with entropy evolution analysis enabled
+setting7:
+  name: "Part1-Exp7: Entropy Evolution Analysis"
+  description: "Full trajectory (0d→8h→1d→3d→7d) with entropy evolution analysis"
+  
+  # Time points to include (same as Setting2)
+  time_points: ["0d", "8h", "1d", "3d", "7d"]
+  
+  # Total cells (same as Setting2 for fair comparison)
+  total_cells: 8974  # Updated: 2024-11-18
+  cells_per_timepoint: null
+  
+  # Validation
+  min_cells_required: 1000
+  
+  # Balance strategy
+  balance_strategy: "total"
+  
+  # Experiment 7 specific parameters
+  entropy_analysis:
+    enabled: true
+    method: "knn"  # Options: 'knn', 'gaussian', 'both'
+    k_neighbors: 5
+    n_samples_per_timepoint: 1000  # Number of cells to sample for entropy calculation
+    compute_real_entropy: true  # Compute entropy curve from real data
+    compare_with_generated: true  # Compare with model-generated trajectories
+
+# Data validation settings
+validation:
+  check_all_timepoints_present: true  # Ensure both train and test have all time points
+  warn_on_filtered_labels: true  # Warn if any cells are filtered due to unlisted labels
+  check_sufficient_cells: true  # Check min_cells_required for each time point

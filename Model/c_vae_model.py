@@ -16,6 +16,10 @@ Architecture:
 import torch
 import torch.nn as nn
 from typing import List, Tuple, Optional
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
+from base_model import TimeConditionedModel
 
 
 def compute_mmd_loss(
@@ -70,7 +74,7 @@ def compute_mmd_loss(
     return mmd
 
 
-class ConditionalVAEModel(nn.Module):
+class ConditionalVAEModel(TimeConditionedModel):
     """
     Time-Conditional VAE for cell state transition.
     
@@ -114,10 +118,16 @@ class ConditionalVAEModel(nn.Module):
             mmd_kernel: Kernel type for MMD ('rbf' or 'linear')
             mmd_bandwidth: Bandwidth for RBF kernel
         """
-        super().__init__()
+        # Create time_labels if not provided
+        if 'time_labels' not in locals():
+            time_labels = [str(i) for i in range(n_timepoints)]
         
-        self.dimension = dimension
-        self.n_timepoints = n_timepoints
+        super().__init__(
+            dimension=dimension,
+            n_timepoints=n_timepoints,
+            time_labels=time_labels
+        )
+        
         self.latent_dim = latent_dim
         self.time_embedding_dim = time_embedding_dim
         self.beta = beta

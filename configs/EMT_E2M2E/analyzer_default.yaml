@@ -1,0 +1,145 @@
+# ============================================================================
+# Analyzer Configuration: Evaluation and Visualization Settings
+# ============================================================================
+# This file defines settings for model evaluation, metrics, and visualizations.
+
+# Evaluation metrics
+evaluation:
+  # Number of samples to generate for evaluation
+  n_samples: 1000
+  
+  # Metrics to compute
+  metrics:
+    # Reconstruction metrics
+    - "test_loss"
+    - "mae"  # Mean Absolute Error
+    - "mse"  # Mean Squared Error
+    - "r2_score"  # R-squared score
+    
+    # Distribution metrics
+    - "frechet_distance"  # Frechet Distance between distributions
+    - "wasserstein_distance"  # Wasserstein Distance
+    - "mmd"  # Maximum Mean Discrepancy
+    - "js_divergence"  # Jensen-Shannon Divergence
+    
+    # Correlation metrics
+    - "pcc"  # Pearson Correlation Coefficient
+    - "spearman"  # Spearman Correlation
+    - "correlation_structure"  # Gene-gene correlation preservation
+    
+    # Gene-level metrics
+    - "r2_per_gene"  # R² for each gene
+    - "gene_expression_fidelity"  # Gene expression distribution matching
+    
+    # Biological metrics
+    - "entropy_evolution"  # Entropy along trajectories
+    - "trajectory_smoothness"  # Smoothness of generated trajectories
+  
+  # Metric computation settings
+  settings:
+    bootstrap_samples: 100  # For confidence intervals
+    confidence_level: 0.95
+    compute_per_timepoint: true  # Compute metrics separately for each time point
+    compute_per_gene: false  # Compute gene-level metrics (can be slow)
+
+# Visualization settings
+visualization:
+  # Dimensionality reduction
+  dim_reduction:
+    pca:
+      n_components: 3
+      compute: true
+    
+    umap:
+      n_components: 2
+      n_neighbors: 15
+      min_dist: 0.1
+      metric: "euclidean"
+      compute: true
+    
+    tsne:
+      n_components: 2
+      perplexity: 30
+      compute: false  # Set to true if needed (can be slow)
+  
+  # Trajectory visualization
+  trajectories:
+    n_trajectories_plot: 5  # Number of example trajectories to plot
+    plot_confidence_bands: true
+    confidence_level: 0.95
+    interpolation_steps: 50  # Number of interpolation points between time points
+  
+  # Distribution plots
+  distributions:
+    plot_marginals: true  # Plot marginal distributions for each time point
+    plot_joint: true  # Plot joint distributions (pairwise)
+    n_genes_to_plot: 10  # Number of top variable genes to plot
+    plot_type: "violin"  # Options: violin, box, kde, hist
+  
+  # Heatmaps
+  heatmaps:
+    plot_correlation: true  # Plot gene-gene correlation matrices
+    plot_expression: true  # Plot expression heatmaps
+    cmap: "viridis"  # Colormap
+    vmin: null  # Min value (null for auto)
+    vmax: null  # Max value (null for auto)
+  
+  # Figure settings
+  figure:
+    dpi: 300
+    format: "png"  # Options: png, pdf, svg, jpg
+    save_formats: ["png", "pdf"]  # Save in multiple formats
+    figsize_single: [8, 6]  # Figure size for single plots
+    figsize_multi: [16, 12]  # Figure size for multi-panel plots
+    font_size: 12
+    title_size: 14
+    label_size: 12
+    legend_size: 10
+    use_tight_layout: true
+  
+  # Color schemes
+  colors:
+    timepoint_palette: "tab10"  # Color palette for time points
+    model_palette: "Set2"  # Color palette for different models
+    custom_colors: null  # Custom color mapping (dict)
+  
+  # Output organization
+  output:
+    create_subdirs: true  # Create subdirectories for different plot types
+    subdirs:
+      trajectories: "trajectories"
+      distributions: "distributions"
+      heatmaps: "heatmaps"
+      metrics: "metrics"
+      dim_reduction: "dim_reduction"
+
+# Comparison settings (for comparing multiple models)
+comparison:
+  # Models to compare
+  models_to_compare: ["sb", "ot", "vae", "sb_mlplus"]
+  
+  # Comparison plots
+  plots:
+    metric_comparison: true  # Bar plots comparing metrics
+    trajectory_comparison: true  # Side-by-side trajectory plots
+    distribution_comparison: true  # Overlaid distribution plots
+  
+  # Statistical tests
+  statistical_tests:
+    enabled: true
+    tests: ["t_test", "wilcoxon"]  # Statistical tests to perform
+    correction: "bonferroni"  # Multiple testing correction
+    alpha: 0.05
+
+# Report generation
+report:
+  generate_html: true  # Generate HTML report
+  generate_pdf: false  # Generate PDF report (requires LaTeX)
+  include_sections:
+    - "summary"
+    - "metrics"
+    - "visualizations"
+    - "statistical_tests"
+    - "conclusions"
+  
+  template: "default"  # Report template to use

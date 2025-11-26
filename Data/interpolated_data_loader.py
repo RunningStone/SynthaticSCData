@@ -2,24 +2,32 @@
 # -*- coding: utf-8 -*-
 """
 Interpolated Data Loader for Experiment 6
-Extends RealDataLoader to generate linearly interpolated intermediate states
+
+Extends BaseDataLoader to generate linearly interpolated intermediate states
+between boundary timepoints.
 """
 
 import numpy as np
 import pandas as pd
 import scanpy as sc
-from pathlib import Path
 from typing import List, Dict, Optional
-import warnings
-warnings.filterwarnings('ignore')
 
-from .data_loader import RealDataLoader
+from .base_data_loader import BaseDataLoader
 
 
-class InterpolatedDataLoader(RealDataLoader):
+class InterpolatedDataLoader(BaseDataLoader):
     """
-    Data loader that generates linearly interpolated intermediate time points
-    Inherits from RealDataLoader and adds interpolation functionality
+    Data loader that generates linearly interpolated intermediate time points.
+    
+    Inherits from BaseDataLoader and adds interpolation functionality to create
+    synthetic intermediate states between boundary timepoints. This is useful for
+    testing model generalization to unseen intermediate states.
+    
+    Key features:
+    - Inherits all standard data loading from BaseDataLoader
+    - Generates linearly interpolated intermediate timepoints
+    - Preserves real boundary data
+    - Marks interpolated vs real data in obs
     """
     
     def __init__(
@@ -27,14 +35,14 @@ class InterpolatedDataLoader(RealDataLoader):
         file_path: str,
         n_hvg: int = 100,
         obs_time_column: str = 'Ground_truth',
-        time_labels: List[str] = None,
-        time_label_order: List[str] = None,
-        biology_split: Dict = None,
+        time_labels: Optional[List[str]] = None,
+        time_label_order: Optional[List[str]] = None,
+        biology_split: Optional[Dict] = None,
         random_seed: int = 42,
-        interpolation_params: Dict = None
+        interpolation_params: Optional[Dict] = None
     ):
         """
-        Initialize interpolated data loader
+        Initialize interpolated data loader.
         
         Args:
             file_path: Path to h5ad file
@@ -65,7 +73,11 @@ class InterpolatedDataLoader(RealDataLoader):
         self.adata_interpolated = None
     
     def load_and_analyze(self):
-        """Load data and generate interpolated intermediate states"""
+        """
+        Load data and generate interpolated intermediate states.
+        
+        Overrides parent method to add interpolation step after standard loading.
+        """
         # First, load the original data using parent method
         super().load_and_analyze()
         
@@ -88,12 +100,24 @@ class InterpolatedDataLoader(RealDataLoader):
             print("="*70)
     
     def _generate_interpolated_data(self):
-        """Generate linearly interpolated intermediate time points"""
+        """
+        Generate linearly interpolated intermediate time points.
         
+        For each intermediate timepoint t_k between boundaries t_0 and t_n:
+        - Compute interpolation weight: λ_k = (t_n - t_k) / (t_n - t_0)
+        - Generate synthetic cells: x_k = λ_k * x_0 + (1 - λ_k) * x_n
+        - Random pairing between boundary cells
+        """
         # Extract parameters
-        boundary_timepoints = self.interpolation_params.get('boundary_timepoints', ["0d", "7d"])
-        intermediate_timepoints = self.interpolation_params.get('intermediate_timepoints', ["8h", "1d", "3d"])
-        n_samples_per_timepoint = self.interpolation_params.get('n_samples_per_timepoint', 750)
+        boundary_timepoints = self.interpolation_params.get(
+            'boundary_timepoints', ["0d", "7d"]
+        )
+        intermediate_timepoints = self.interpolation_params.get(
+            'intermediate_timepoints', ["8h", "1d", "3d"]
+        )
+        n_samples_per_timepoint = self.interpolation_params.get(
+            'n_samples_per_timepoint', 750
+        )
         time_to_hours = self.interpolation_params.get('time_to_hours', {
             "0d": 0.0, "8h": 8.0, "1d": 24.0, "3d": 72.0, "7d": 168.0
         })
@@ -132,7 +156,9 @@ class InterpolatedDataLoader(RealDataLoader):
             # Sample n_samples_per_timepoint cells
             n_available = X.shape[0]
             if n_available > n_samples_per_timepoint:
-                indices = np.random.choice(n_available, n_samples_per_timepoint, replace=False)
+                indices = np.random.choice(
+                    n_available, n_samples_per_timepoint, replace=False
+                )
                 X_sampled = X[indices]
                 obs_indices = np.where(mask)[0][indices]
             else:

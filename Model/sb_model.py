@@ -8,9 +8,10 @@ import torch
 import torch.nn as nn
 import numpy as np
 from typing import List, Optional
+from .base_model import ContinuousTimeModel
 
 
-class SchrodingerBridgeModel(nn.Module):
+class SchrodingerBridgeModel(ContinuousTimeModel):
     """
     Neural network parameterized drift field for Schrödinger Bridge.
     
@@ -38,9 +39,8 @@ class SchrodingerBridgeModel(nn.Module):
             dropout: Dropout probability
             diffusion_coeff: Diffusion coefficient D
         """
-        super().__init__()
+        super().__init__(dimension=dimension)
         
-        self.dimension = dimension
         self.time_embedding_dim = time_embedding_dim
         self.D = diffusion_coeff
         

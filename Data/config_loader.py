@@ -127,11 +127,17 @@ def setup_logging(config: Dict[str, Any]) -> logging.Logger:
 
 
 def create_data_loader_from_config(config: Dict[str, Any], logger: logging.Logger) -> RealDataLoader:
-    """从配置创建数据加载器"""
+    """从配置创建数据加载器
+    
+    支持两种数据加载器：
+    1. RealDataLoader: 标准数据加载（默认）
+    2. InterpolatedDataLoader: 插值数据生成
+    """
     
     data_source = config['data_source']
     biology_split = config['biology_split']
     setting_config = config['data_setting']
+    data_sampling_override = config.get('data_sampling_override', {}) or {}  # 获取override配置
     
     logger.info("="*70)
     logger.info("Creating Data Loader from Configuration")
@@ -237,11 +243,11 @@ def get_data_for_setting(
     """根据setting配置获取数据，支持experiment级别的覆盖"""
     
     setting_config = config['data_setting']
-    time_points = setting_config['time_points']
+    time_points = setting_config['time_points']  # 配置中指定的时间点
     balance_strategy = setting_config['balance_strategy']
     
     logger.info(f"\nPreparing data for setting: {config['data_setting_name']}")
-    logger.info(f"Time points: {time_points}")
+    logger.info(f"Time points to use: {time_points}")
     logger.info(f"Balance strategy: {balance_strategy}")
     
     # 确定setting类型
@@ -288,5 +294,6 @@ def get_data_for_setting(
         setting=setting,
         cells_per_timepoint=cells_per_timepoint,
         total_cells=total_cells,
-        balance_strategy=balance_strategy
+        balance_strategy=balance_strategy,
+        selected_time_points=time_points  # 传递配置中指定的时间点
     )

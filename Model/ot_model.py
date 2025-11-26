@@ -8,9 +8,10 @@ Uses neural network to parameterize the transport map T: X_0 -> X_T
 import torch
 import torch.nn as nn
 from typing import List, Optional
+from .base_model import ContinuousTimeModel
 
 
-class OptimalTransportModel(nn.Module):
+class OptimalTransportModel(ContinuousTimeModel):
     """
     Neural network parameterized optimal transport map.
     
@@ -35,9 +36,8 @@ class OptimalTransportModel(nn.Module):
             dropout: Dropout probability
             use_residual: Whether to use residual connection (T(x) = x + ΔT(x))
         """
-        super().__init__()
+        super().__init__(dimension=dimension)
         
-        self.dimension = dimension
         self.use_residual = use_residual
         
         # Build transport network

@@ -20,9 +20,10 @@ import torch
 import torch.nn as nn
 from typing import List, Optional, Dict, Tuple, Union
 from .ot_model import OptimalTransportModel
+from .base_model import TimeConditionedModel
 
 
-class BatchOTModel(nn.Module):
+class BatchOTModel(TimeConditionedModel):
     """
     Batch OT Model that trains separate OT models for consecutive time pairs.
     
@@ -51,11 +52,12 @@ class BatchOTModel(nn.Module):
             dropout: Dropout probability
             use_residual: Whether to use residual connection in OT models
         """
-        super().__init__()
+        super().__init__(
+            dimension=dimension,
+            n_timepoints=n_timepoints,
+            time_labels=time_labels
+        )
         
-        self.dimension = dimension
-        self.n_timepoints = n_timepoints
-        self.time_labels = time_labels
         self.n_transitions = n_timepoints - 1  # Number of consecutive pairs
         
         # Create separate OT models for each consecutive time pair

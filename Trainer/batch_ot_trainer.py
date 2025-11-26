@@ -3,7 +3,8 @@
 """
 Batch OT Trainer for Sequential Time Point Learning
 
-Trains separate OT models for each consecutive time pair in Setting 2.
+Refactored to use composition pattern with BaseTrainer logic.
+BatchOT is special because it trains multiple models, so we customize more heavily.
 """
 
 import torch
@@ -11,7 +12,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import numpy as np
 from pathlib import Path
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 from tqdm import tqdm
 import json
 
@@ -20,8 +21,11 @@ class BatchOTTrainer:
     """
     Trainer for Batch OT Model.
     
-    Trains separate OT models for each consecutive time pair.
-    Each model is trained independently on its corresponding time pair data.
+    This trainer is different from others because it trains multiple OT models
+    (one for each consecutive time pair) with separate optimizers and schedulers.
+    
+    We don't inherit from BaseTrainer because the multi-model structure
+    requires significant customization, but we follow the same patterns.
     """
     
     def __init__(
@@ -33,7 +37,9 @@ class BatchOTTrainer:
         device: str = 'cuda',
         output_dir: str = './outputs',
         weight_decay: float = 1e-5,
-        grad_clip_norm: float = 5.0
+        grad_clip_norm: float = 5.0,
+        optimizer_kwargs: Optional[Dict] = None,
+        scheduler_config: Optional[Dict] = None
     ):
         """
         Args:
@@ -45,6 +51,8 @@ class BatchOTTrainer:
             output_dir: Output directory for checkpoints
             weight_decay: Weight decay for regularization
             grad_clip_norm: Gradient clipping norm
+            optimizer_kwargs: Additional optimizer parameters
+            scheduler_config: Scheduler configuration
         """
         self.model = model.to(device)
         self.train_loader = train_loader
@@ -53,6 +61,13 @@ class BatchOTTrainer:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.grad_clip_norm = grad_clip_norm
+        
+        # Get optimizer kwargs
+        if optimizer_kwargs is None:
+            optimizer_kwargs = {}
+        
+        betas = optimizer_kwargs.get('betas', [0.9, 0.999])
+        eps = optimizer_kwargs.get('eps', 1e-8)
         
         # Create separate optimizers for each OT model
         self.optimizers = []
@@ -63,17 +78,29 @@ class BatchOTTrainer:
                 self.model.ot_models[i].parameters(),
                 lr=learning_rate,
                 weight_decay=weight_decay,
-                betas=(0.9, 0.999)
+                betas=tuple(betas),
+                eps=eps
             )
             self.optimizers.append(optimizer)
             
-            scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer,
-                mode='min',
-                factor=0.5,
-                patience=10,
-                min_lr=1e-6
-            )
+            # Setup scheduler
+            scheduler_config = scheduler_config if scheduler_config is not None else {}
+            scheduler_type = scheduler_config.get('type', 'reduce_on_plateau')
+            
+            if scheduler_type == 'reduce_on_plateau':
+                patience = scheduler_config.get('patience', 10)
+                factor = scheduler_config.get('factor', 0.5)
+                min_lr = scheduler_config.get('min_lr', 1e-6)
+                scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                    optimizer,
+                    mode='min',
+                    factor=factor,
+                    patience=patience,
+                    min_lr=min_lr
+                )
+            else:
+                scheduler = None
+            
             self.schedulers.append(scheduler)
         
         # Training history for each transition
@@ -88,7 +115,7 @@ class BatchOTTrainer:
         self.best_test_losses = [float('inf')] * self.model.n_transitions
         self.patience_counters = [0] * self.model.n_transitions
     
-    def extract_time_pairs_from_batch(
+    def process_batch_data(
         self,
         X: torch.Tensor,
         y: torch.Tensor
@@ -104,7 +131,10 @@ class BatchOTTrainer:
             Dictionary mapping transition_idx to {source, target} tensors
         """
         unique_times = torch.unique(y)
-        time_to_indices = {t.item(): (y == t).nonzero(as_tuple=True)[0] for t in unique_times}
+        time_to_indices = {
+            t.item(): (y == t).nonzero(as_tuple=True)[0]
+            for t in unique_times
+        }
         sorted_times = sorted(time_to_indices.keys())
         
         pairs_data = {}
@@ -125,8 +155,7 @@ class BatchOTTrainer:
                 if len(indices_target) > n_pairs:
                     indices_target = indices_target[torch.randperm(len(indices_target))[:n_pairs]]
                 
-                # Use transition index (i) as key, not time index (t_source)
-                # transition_idx corresponds to the i-th OT model
+                # Use transition index (i) as key
                 pairs_data[i] = {
                     'source': X[indices_source],
                     'target': X[indices_target]
@@ -147,7 +176,7 @@ class BatchOTTrainer:
             y = y.to(self.device)
             
             # Extract time pairs from batch
-            pairs_data = self.extract_time_pairs_from_batch(X, y)
+            pairs_data = self.process_batch_data(X, y)
             
             # Train each transition model
             batch_losses = []
@@ -205,7 +234,7 @@ class BatchOTTrainer:
                 y = y.to(self.device)
                 
                 # Extract time pairs from batch
-                pairs_data = self.extract_time_pairs_from_batch(X, y)
+                pairs_data = self.process_batch_data(X, y)
                 
                 # Evaluate each transition model
                 for transition_idx in range(self.model.n_transitions):
@@ -275,7 +304,7 @@ class BatchOTTrainer:
                 self.history['learning_rate'][i].append(current_lr)
                 
                 # Step scheduler
-                if test_losses[f'transition_{i}'] > 0:
+                if test_losses[f'transition_{i}'] > 0 and self.schedulers[i] is not None:
                     self.schedulers[i].step(test_losses[f'transition_{i}'])
             
             self.history['overall_train_loss'].append(train_losses['overall'])
@@ -284,14 +313,6 @@ class BatchOTTrainer:
             # Print losses
             print(f"Overall Train Loss: {train_losses['overall']:.6f}")
             print(f"Overall Test Loss: {test_losses['overall']:.6f}")
-            # Per-transition losses output commented out to reduce clutter
-            # print("\nPer-transition losses:")
-            # for i in range(self.model.n_transitions):
-            #     t_start, t_end = self.model.time_pairs[i]
-            #     train_loss = train_losses[f'transition_{i}']
-            #     test_loss = test_losses[f'transition_{i}']
-            #     lr = self.optimizers[i].param_groups[0]['lr']
-            #     print(f"  {t_start}->{t_end}: Train={train_loss:.6f}, Test={test_loss:.6f}, LR={lr:.2e}")
             
             # Check for best models and early stopping
             all_converged = True
@@ -327,11 +348,6 @@ class BatchOTTrainer:
             json.dump(self.history, f, indent=2)
         
         print(f"\n✓ Training complete!")
-        # Best test losses per transition output commented out to reduce clutter
-        # print("\nBest test losses per transition:")
-        # for i in range(self.model.n_transitions):
-        #     t_start, t_end = self.model.time_pairs[i]
-        #     print(f"  {t_start}->{t_end}: {self.best_test_losses[i]:.6f}")
         
         return self.history
     
@@ -349,6 +365,16 @@ class BatchOTTrainer:
             'best_test_losses': self.best_test_losses,
             'time_pairs': self.model.time_pairs
         }
+        
+        # Add scheduler states if they exist
+        scheduler_states = []
+        for scheduler in self.schedulers:
+            if scheduler is not None:
+                scheduler_states.append(scheduler.state_dict())
+            else:
+                scheduler_states.append(None)
+        checkpoint['scheduler_state_dicts'] = scheduler_states
+        
         torch.save(checkpoint, self.output_dir / filename)
     
     def load_checkpoint(self, filename: str):
@@ -358,6 +384,12 @@ class BatchOTTrainer:
         
         for i, opt_state in enumerate(checkpoint['optimizer_state_dicts']):
             self.optimizers[i].load_state_dict(opt_state)
+        
+        # Load scheduler states if they exist
+        if 'scheduler_state_dicts' in checkpoint:
+            for i, sched_state in enumerate(checkpoint['scheduler_state_dicts']):
+                if sched_state is not None and self.schedulers[i] is not None:
+                    self.schedulers[i].load_state_dict(sched_state)
         
         self.history = checkpoint['history']
         self.best_test_losses = checkpoint['best_test_losses']

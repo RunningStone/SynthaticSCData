@@ -256,8 +256,7 @@ def run_experiment_from_config(config: Dict[str, Any], logger: logging.Logger):
         yaml.dump(config, f, default_flow_style=False)
     logger.info(f"Configuration saved to: {config_save_path}")
     
-    # 加载数据 (假设已经在外部创建好了data_loader)
-    # 这部分需要从外部传入或在这里重新创建
+    # 加载数据
     from Data.config_loader import create_data_loader_from_config, validate_data_config, get_data_for_setting
     
     data_loader = create_data_loader_from_config(config, logger)
@@ -266,11 +265,13 @@ def run_experiment_from_config(config: Dict[str, Any], logger: logging.Logger):
     # 验证配置
     validate_data_config(data_loader, config, logger)
     
-    # 获取数据
+    # 获取batch_size
+    batch_size = config['models'][list(config['models'].keys())[0]]['training']['batch_size']
+    
+    # 标准流程：使用 get_data_for_setting
     X_train, y_train, X_test, y_test = get_data_for_setting(data_loader, config, logger)
     
     # 创建DataLoader
-    batch_size = config['models'][list(config['models'].keys())[0]]['training']['batch_size']
     train_loader, test_loader, stats = create_dataloaders_from_data(
         X_train, y_train, X_test, y_test,
         time_labels=data_loader.time_label_order,
@@ -299,6 +300,7 @@ def run_experiment_from_config(config: Dict[str, Any], logger: logging.Logger):
         logger.info(f"    {tp}: {stats['test_time_counts'][tp]} cells")
     
     dimension = stats['n_genes']
+    time_labels = stats['time_labels']
     
     # 训练所有模型
     all_results = {}
