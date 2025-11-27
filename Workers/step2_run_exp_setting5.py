@@ -70,9 +70,27 @@ def load_data_for_setting8(config: dict, logger):
     # Get Setting 8 specific parameters
     setting8_params = config.get('data_sampling_override', {}) or {}
     total_cells = setting8_params.get('total_cells', 8974)
-    start_timepoint = setting8_params.get('start_timepoint', '0d')
-    end_timepoint = setting8_params.get('end_timepoint', '7d')
     shuffle_seed = setting8_params.get('shuffle_seed', 42)
+    
+    # Get time labels from data configuration
+    time_labels_order = data_source.get('time_labels_order', [])
+    if not time_labels_order:
+        raise ValueError("time_labels_order not found in data_source configuration")
+    
+    # Get start/end timepoints from config, with fallback to first/last in time_labels_order
+    # Priority: data_sampling_override > evaluation > data_setting > default (first/last)
+    start_timepoint = (
+        setting8_params.get('start_timepoint') or
+        config.get('evaluation', {}).get('start_timepoint') or
+        data_setting.get('boundary_timepoints', [None, None])[0] or
+        time_labels_order[0]
+    )
+    end_timepoint = (
+        setting8_params.get('end_timepoint') or
+        config.get('evaluation', {}).get('end_timepoint') or
+        data_setting.get('boundary_timepoints', [None, None])[-1] or
+        time_labels_order[-1]
+    )
     
     logger.info(f"Data setting: {data_setting_name}")
     logger.info(f"Total cells: {total_cells}")

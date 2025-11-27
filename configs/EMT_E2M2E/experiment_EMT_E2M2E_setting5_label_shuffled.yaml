@@ -27,7 +27,10 @@ data_sampling_override:
   total_cells: 8974
   
   # Boundary timepoints (labels NOT shuffled)
+  # These are used as start/end for evaluation and excluded from label shuffling
   boundary_timepoints: ["0d", "3d_rm"]
+  start_timepoint: "0d"
+  end_timepoint: "3d_rm"
   
   # Intermediate timepoints (labels TO BE shuffled)
   intermediate_timepoints: ["8h", "1d", "3d", "7d", "8h_rm", "1d_rm"]
