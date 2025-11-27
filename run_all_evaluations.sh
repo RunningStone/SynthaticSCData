@@ -34,7 +34,7 @@ run_evaluation() {
     echo "  Checkpoints: ${checkpoint_dir}"
     echo ""
     
-    python step1_run_evaluation_only.py \
+    python step2_run_evaluation_only.py \
         "${config_file}" \
         "${checkpoint_dir}" \
         --config_dir configs

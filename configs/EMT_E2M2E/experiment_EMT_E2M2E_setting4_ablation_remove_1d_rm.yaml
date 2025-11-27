@@ -1,0 +1,104 @@
+# ============================================================================
+# Experiment Configuration: EMT E2M2E - Ablation Study (Remove 1d_rm)
+# ============================================================================
+# Ablation: Remove 1d_rm timepoint to assess its marginal contribution
+
+experiment:
+  name: "EMT_E2M2E_Setting4_Ablation_Remove1d_rm"
+  description: "Ablation study: remove 1d_rm timepoint to assess its marginal contribution"
+  version: "1.0"
+  author: "Shi Pan"
+  date: "2024-11-27"
+  parent_experiment: "EMT_E2M2E_Setting2"
+  ablation_target: "1d_rm"
+
+configs:
+  data: "data_EMT_E2M2E.yaml"
+  models: "models_default.yaml"
+  analyzer: "analyzer_default.yaml"
+
+data_setting: "setting4_ablation_remove_1d_rm"
+
+data_sampling_override:
+  total_cells: 8974
+
+models_to_train:
+  - name: "sb_mlplus"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
+        early_stopping_patience: 30
+
+settings:
+  seed: 42
+  device: "cuda"
+  multi_gpu:
+    enabled: false
+  num_workers: 4
+  mixed_precision:
+    enabled: false
+  
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/EMT_E2M2E/Setting4_Ablation_Remove1d_rm"
+  
+  subdirs:
+    checkpoints: "checkpoints"
+    logs: "logs"
+    visualizations: "visualizations"
+    metrics: "metrics"
+    generated_data: "generated_data"
+  
+  logging:
+    console_level: "INFO"
+    file_level: "DEBUG"
+    log_file: "experiment.log"
+    wandb:
+      enabled: false
+    tensorboard:
+      enabled: true
+      log_dir: "tensorboard"
+  
+  checkpoint:
+    save_frequency: 10
+    keep_last_n: 3
+    save_best: true
+    save_optimizer: true
+    save_scheduler: true
+
+evaluation:
+  eval_during_training: true
+  eval_frequency: 5
+  eval_on_test: true
+  compute_metrics: true
+  generate_visualizations: true
+  save_generated_samples: true
+  n_samples_per_model: 1000
+  
+  start_timepoint: "0d"
+  end_timepoint: "3d_rm"
+  
+  trajectory:
+    n_intermediate_points: 20
+    save_full_trajectory: true
+    analyze_per_segment: true
+
+post_analysis:
+  enabled: true
+  tasks:
+    - name: "ablation_impact_analysis"
+      description: "Analyze the impact of removing 1d_rm timepoint"
+      enabled: true
+    - name: "generate_report"
+      description: "Generate ablation study report"
+      enabled: true
+
+resources:
+  max_memory_gb: 32
+  max_time_hours: 24
+
+error_handling:
+  continue_on_error: false
+  save_on_error: true
+  send_notification: false
+  notification_email: null

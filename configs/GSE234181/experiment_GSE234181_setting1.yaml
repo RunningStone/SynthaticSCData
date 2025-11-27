@@ -1,0 +1,120 @@
+# ============================================================================
+# Experiment Configuration: GSE234181 - Setting 1 (Boundary Only)
+# ============================================================================
+# Boundary time points only: T0 (start) and T3 (awakening)
+
+experiment:
+  name: "GSE234181_Setting1_Boundary"
+  description: "Train models on boundary time points (T0, T3) only"
+  version: "1.0"
+  author: "Shi Pan"
+  date: "2024-11-27"
+
+configs:
+  data: "data_GSE234181.yaml"
+  models: "models_default.yaml"
+  analyzer: "analyzer_default.yaml"
+
+data_setting: "setting1"
+
+data_sampling_override:
+  cells_per_timepoint: 2000
+  # Setting1: 2 timepoints × 2,000 = 4,000 total samples
+
+models_to_train:
+  - name: "sb_mlplus"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
+        early_stopping_patience: 30
+  
+  - name: "batch_ot"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
+  
+  - name: "vae"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
+
+settings:
+  seed: 42
+  device: "cuda"
+  multi_gpu:
+    enabled: false
+  num_workers: 4
+  mixed_precision:
+    enabled: false
+  
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/GSE234181/Setting1_Boundary"
+  
+  subdirs:
+    checkpoints: "checkpoints"
+    logs: "logs"
+    visualizations: "visualizations"
+    metrics: "metrics"
+    generated_data: "generated_data"
+  
+  logging:
+    console_level: "INFO"
+    file_level: "DEBUG"
+    log_file: "experiment.log"
+    wandb:
+      enabled: false
+    tensorboard:
+      enabled: true
+      log_dir: "tensorboard"
+  
+  checkpoint:
+    save_frequency: 10
+    keep_last_n: 3
+    save_best: true
+    save_optimizer: true
+    save_scheduler: true
+
+evaluation:
+  eval_during_training: true
+  eval_frequency: 5
+  eval_on_test: true
+  compute_metrics: true
+  generate_visualizations: true
+  save_generated_samples: true
+  n_samples_per_model: 1000
+  
+  # Evaluation endpoints
+  start_timepoint: "T0"
+  end_timepoint: "T3"
+  
+  interpolation:
+    n_intermediate_points: 50
+    save_trajectory: true
+
+post_analysis:
+  enabled: true
+  tasks:
+    - name: "model_comparison"
+      description: "Compare all trained models"
+      enabled: true
+    - name: "trajectory_analysis"
+      description: "Analyze generated trajectories"
+      enabled: true
+    - name: "generate_report"
+      description: "Generate comprehensive HTML report"
+      enabled: true
+
+resources:
+  max_memory_gb: 32
+  max_time_hours: 24
+
+error_handling:
+  continue_on_error: false
+  save_on_error: true
+  send_notification: false
+  notification_email: null

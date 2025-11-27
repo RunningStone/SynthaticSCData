@@ -84,9 +84,9 @@ sb_mlplus:
     use_residual: true
   
   training:
-    epochs: 200
-    batch_size: 64
-    learning_rate: 1.0e-5  # 5.0e-5
+    epochs: 300  # 增加到300，因为数据量翻倍
+    batch_size: 128  # 从64增加到128，加速训练
+    learning_rate: 3.0e-5  # 从1e-5提高到3e-5，加快收敛
     optimizer: "adam"
     optimizer_kwargs:
       betas: [0.9, 0.999]
@@ -95,13 +95,13 @@ sb_mlplus:
     
     scheduler:
       type: "cosine"
-      T_max: 200
+      T_max: 300  # 匹配新的epochs
       eta_min: 1.0e-6
     
     early_stopping:
       enabled: true
-      patience: 50
-      min_delta: 1.0e-4
+      patience: 80  # 从50增加到80，给模型更多时间稳定
+      min_delta: 5.0e-4  # 从1e-4增加到5e-4，容忍更大的loss波动
     
     gradient_clipping:
       enabled: true

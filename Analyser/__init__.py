@@ -30,6 +30,20 @@ from .model_param_analyzer import ModelParamAnalyzer
 from .ablation_analyzer import AblationAnalyzer
 from .interpolation_analyzer import InterpolationAnalyzer
 from .entropy_analyzer import EntropyAnalyzer
+from .figure_plotters import (
+    plot_performance_radar,
+    plot_phate_3x3_grid,
+    plot_ablation_bar_chart,
+    plot_ablation_heatmap,
+    plot_entropy_marginal_scatter,
+    plot_causal_ablation_comparison,
+    plot_interpolation_ladder,
+    extract_metrics_from_results,
+    METRICS_CONFIG,
+    SETTING_COLORS,
+    MODEL_COLORS,
+    TIMEPOINT_COLORS,
+)
 
 __all__ = [
     "BaseVisualizer",
@@ -43,4 +57,17 @@ __all__ = [
     "AblationAnalyzer",
     "InterpolationAnalyzer",
     "EntropyAnalyzer",
+    # Figure plotters
+    "plot_performance_radar",
+    "plot_phate_3x3_grid",
+    "plot_ablation_bar_chart",
+    "plot_ablation_heatmap",
+    "plot_entropy_marginal_scatter",
+    "plot_causal_ablation_comparison",
+    "plot_interpolation_ladder",
+    "extract_metrics_from_results",
+    "METRICS_CONFIG",
+    "SETTING_COLORS",
+    "MODEL_COLORS",
+    "TIMEPOINT_COLORS",
 ]

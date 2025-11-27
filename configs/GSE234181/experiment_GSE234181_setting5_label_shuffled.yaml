@@ -1,67 +1,40 @@
 # ============================================================================
-# Experiment Configuration: EMT Dataset - Setting 5 (Label-Shuffled)
+# Experiment Configuration: GSE234181 - Setting 5 (Label Shuffled)
 # ============================================================================
-# Experiment 5: Time Label Randomization
-# 
+# Label shuffling experiment: Shuffle labels among intermediate timepoints
+# Boundary timepoints (T0, T3) keep their original labels
+# Intermediate timepoints (T1, T2) have shuffled labels
+#
 # Purpose: Test whether models rely on absolute time labels or can learn
 #          dynamics from data geometry even when labels are randomized
-#
-# Design:
-#   1. Exclude boundary timepoints (0d, 7d) from training
-#   2. Keep only intermediate timepoints (8h, 1d, 3d)
-#   3. Randomly shuffle time labels among intermediate points
-#   4. Train models as in Setting 2 (sb_mlplus, batch_ot, vae)
-#   5. Evaluate on true labels to test if model learned real dynamics
-#
-# Research Question:
-#   Does the model depend on absolute time labels, or can it learn from
-#   data structure even when labels are randomized?
-#
-# Expected Outcomes:
-#   - If performance drops: model relies on absolute time labels
-#   - If performance maintains: model learns from data geometry, not labels
-#   - This addresses the critique that Setting 5 results are meaningless
-#     because "the model learned disordered data"
 
-# Experiment metadata
 experiment:
-  name: "EMT_Part1_Setting8_LabelShuffled"
-  description: "Label-shuffled experiment - randomize time labels on intermediate timepoints"
+  name: "GSE234181_Setting5_LabelShuffled"
+  description: "Label-shuffled experiment - randomize time labels on intermediate timepoints (T1, T2)"
   version: "1.0"
   author: "Shi Pan"
-  date: "2024-11-24"
-  
-  # Experiment type flag
+  date: "2024-11-27"
   experiment_type: "label_shuffled"
 
-# Configuration file references
 configs:
-  data: "data_EMT_Cook_with_label.yaml"
+  data: "data_GSE234181.yaml"
   models: "models_default.yaml"
   analyzer: "analyzer_default.yaml"
 
-# Data setting selection (use setting2 as base)
-data_setting: "setting2"
+data_setting: "setting5_label_shuffled"
 
-# Data sampling override (Setting 8 specific)
 data_sampling_override:
-  total_cells: 8974  # Same as Setting 2 for comparison
+  total_cells: 4000
   
-  # Boundary timepoints to exclude
-  start_timepoint: "0d"  # Exclude start
-  end_timepoint: "7d"    # Exclude end
+  # Boundary timepoints (labels NOT shuffled)
+  boundary_timepoints: ["T0", "T3"]
   
-  # Only intermediate timepoints will be used: 8h, 1d, 3d
-  # Their labels will be randomly shuffled
+  # Intermediate timepoints (labels TO BE shuffled)
+  intermediate_timepoints: ["T1", "T2"]
   
   # Shuffling parameters
-  shuffle_seed: 42  # For reproducibility
-  
-  # Note: After excluding 0d and 7d, we have 3 intermediate timepoints
-  # Original: 8h, 1d, 3d
-  # After shuffle: labels randomly permuted among these 3 timepoints
+  shuffle_seed: 42
 
-# Models to train (same as Setting 2)
 models_to_train:
   - name: "sb_mlplus"
     enabled: true
@@ -85,21 +58,16 @@ models_to_train:
         epochs: 200
         batch_size: 64
 
-# Experiment-specific settings
 settings:
   seed: 42
   device: "cuda"
-  
   multi_gpu:
     enabled: false
-  
   num_workers: 4
-  
   mixed_precision:
     enabled: false
   
-  # Output directory
-  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/EMT_E2M/Setting8_LabelShuffled"
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/GSE234181/Setting5_LabelShuffled"
   
   subdirs:
     checkpoints: "checkpoints"
@@ -112,10 +80,8 @@ settings:
     console_level: "INFO"
     file_level: "DEBUG"
     log_file: "experiment.log"
-    
     wandb:
       enabled: false
-    
     tensorboard:
       enabled: true
       log_dir: "tensorboard"
@@ -127,39 +93,32 @@ settings:
     save_optimizer: true
     save_scheduler: true
 
-# Evaluation settings
 evaluation:
   eval_during_training: true
   eval_frequency: 5
   eval_on_test: true
-  
   compute_metrics: true
   generate_visualizations: true
   save_generated_samples: true
-  
   n_samples_per_model: 1000
   
   # Evaluation endpoints (use true labels)
-  # Note: Even though training excluded 0d and 7d, we still evaluate
-  # the model's ability to generate from 0d to 7d using the learned dynamics
-  start_timepoint: "0d"
-  end_timepoint: "7d"
+  start_timepoint: "T0"
+  end_timepoint: "T3"
   
   trajectory:
     n_intermediate_points: 20
     save_full_trajectory: true
     analyze_per_segment: true
 
-# Post-training analysis
 post_analysis:
   enabled: true
-  
   tasks:
     - name: "label_shuffle_analysis"
       description: "Analyze impact of label shuffling on model performance"
       enabled: true
       params:
-        reference_setting: "EMT_Part1_Setting2"  # Compare with Setting 2
+        reference_setting: "GSE234181_Setting2"
         metrics_to_compare:
           - "test_loss"
           - "frechet_distance"
@@ -167,52 +126,38 @@ post_analysis:
           - "pcc"
           - "wasserstein_distance"
           - "mmd"
-    
     - name: "label_confusion_analysis"
       description: "Analyze label confusion matrix"
       enabled: true
       params:
         visualize_confusion: true
-    
     - name: "generate_report"
       description: "Generate comprehensive comparison report"
       enabled: true
 
-# Resource limits
 resources:
   max_memory_gb: 32
   max_time_hours: 48
 
-# Error handling
 error_handling:
   continue_on_error: false
   save_on_error: true
   send_notification: false
   notification_email: null
 
-# Experiment-specific notes
 notes: |
-  Experiment 8: Time Label Randomization
+  Experiment 5: Time Label Randomization for GSE234181
   
   Research Question:
     Does the model rely on absolute time labels, or can it learn dynamics
     from data geometry even when time labels are randomized?
   
   Design:
-    1. Exclude boundary timepoints (0d, 7d)
-    2. Keep intermediate timepoints (8h, 1d, 3d)
-    3. Randomly shuffle labels among intermediate points
-    4. Train models as in Setting 2
-    5. Evaluate on true labels (0d → 7d)
-  
-  Key Difference from Setting 5:
-    - Setting 5: Shuffles cell-time pairs, breaks causal relationships
-    - Setting 8: Shuffles time labels, confounds absolute vs relative time
+    1. Keep boundary timepoints (T0, T3) with original labels
+    2. Shuffle labels among intermediate timepoints (T1, T2)
+    3. Train models as in Setting 2
+    4. Evaluate on true labels (T0 → T3)
   
   Interpretation:
     - Performance drop: Model depends on absolute time labels
     - Performance maintains: Model learns from data geometry
-  
-  This addresses the critique that Setting 5 results are meaningless
-  because "the model learned disordered data". Setting 8 shows whether
-  the model can discover true temporal order from data structure alone.

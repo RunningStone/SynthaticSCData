@@ -36,6 +36,7 @@ from Trainer import train_model, Evaluator
 import torch
 from torch.utils.data import DataLoader
 import json
+import yaml
 
 
 def load_data_for_setting8(config: dict, logger):
@@ -269,6 +270,12 @@ def run_setting8_experiment(config: dict, logger):
     # Save results
     output_dir = Path(config['settings']['output_dir'])
     output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Save experiment config (required for step3_run_inference.py)
+    config_save_path = output_dir / 'experiment_config.yaml'
+    with open(config_save_path, 'w') as f:
+        yaml.dump(config, f, default_flow_style=False)
+    logger.info(f"Configuration saved to: {config_save_path}")
     
     results_file = output_dir / 'results.json'
     with open(results_file, 'w') as f:

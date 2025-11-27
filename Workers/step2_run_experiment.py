@@ -61,20 +61,9 @@ Examples:
     config = config_loader.load_experiment_config(args.config_file)
     
     # 覆盖输出目录（如果指定）
+    # 直接使用传入的 output_dir，不追加任何子目录
     if args.output_dir is not None:
-        from pathlib import Path
-        # 保留原配置中的项目和实验子目录结构
-        original_output = Path(config['settings']['output_dir'])
-        base_output = Path(args.output_dir)
-        
-        # 提取相对于某个基础路径的子目录（例如：SynthaticSCData/EMT_Setting1）
-        # 假设原始路径格式为：.../OUTPUTs/SynthaticSCData/EMT_Setting1
-        # 我们需要保留最后两级目录
-        relative_parts = original_output.parts[-2:]  # 获取最后两级：('SynthaticSCData', 'EMT_Setting1')
-        
-        # 构建新的完整路径
-        new_output_dir = base_output / Path(*relative_parts)
-        config['settings']['output_dir'] = str(new_output_dir)
+        config['settings']['output_dir'] = args.output_dir
     
     # 设置日志
     logger = setup_logging(config)

@@ -3,6 +3,9 @@
 # ============================================================================
 # This file defines the data source, label mappings, and setting-specific
 # configurations for training/testing data splits.
+#
+# GSE234181: Dormancy and awakening trajectory
+# T0 → T1 → T2 → T3 (Dormancy to Awakening)
 
 # Raw data file information
 data_source:
@@ -55,45 +58,155 @@ biology_split:
   
   train_ratio: 0.8  # Only used if column_name is null (random split)
 
-# Setting 1: Boundary time points only (first and last)
+# ============================================================================
+# Setting 1: Boundary time points only (T0 and T3)
+# ============================================================================
 setting1:
-  name: "Boundary Only"
-  description: "Use only the first and last time points for interpolation (T0 and T3)"
+  name: "GSE234181-Setting1: Boundary (T0 and T3)"
+  description: "Use only the first and last time points: T0 (start) and T3 (awakening)"
   
-  # Time points to include (must be in time_labels_order)
+  # Time points to include
   time_points: ["T0", "T3"]
   
   # Number of cells per time point
   cells_per_timepoint: 2000
   
-  # Validation: check if sufficient cells exist
-  min_cells_required: 1000  # Error if any time point has fewer cells
+  # Validation
+  min_cells_required: 1000
   
   # Balance strategy
-  balance_strategy: "per_timepoint"  # Each time point has cells_per_timepoint samples
+  balance_strategy: "per_timepoint"
 
-# Setting 2: All time points
+# ============================================================================
+# Setting 2: All 4 time points (Full trajectory)
+# ============================================================================
 setting2:
-  name: "All Time Points"
-  description: "Use all available time points for full trajectory learning (T0, T1, T2, T3)"
+  name: "GSE234181-Setting2: Full Trajectory (All 4 timepoints)"
+  description: "Use all available time points: T0 → T1 → T2 → T3"
   
-  # Time points to include (must be in time_labels_order)
+  # Time points to include
   time_points: ["T0", "T1", "T2", "T3"]
   
-  # Total cells or cells per time point
-  total_cells: 4000  # Total number of cells across all time points
-  cells_per_timepoint: null  # If null, use total_cells; if set, use this instead
+  # Total cells
+  total_cells: 4000
+  cells_per_timepoint: null
   
   # Validation
-  min_cells_required: 500  # Error if any time point has fewer cells
+  min_cells_required: 500
   
-  # Balance strategy: "total" or "per_timepoint"
-  # - "total": Distribute total_cells evenly across time points
-  # - "per_timepoint": Each time point has cells_per_timepoint samples
+  # Balance strategy
   balance_strategy: "total"
+
+# ============================================================================
+# Setting 3: Key time points (T0, T1, T3)
+# ============================================================================
+setting3:
+  name: "GSE234181-Setting3: Key Timepoints (T0, T1, T3)"
+  description: "Use key time points: T0 (start), T1 (early dormancy), T3 (awakening)"
+  
+  # Time points to include
+  time_points: ["T0", "T1", "T3"]
+  
+  # Total cells
+  total_cells: 4000
+  cells_per_timepoint: null
+  
+  # Validation
+  min_cells_required: 500
+  
+  # Balance strategy
+  balance_strategy: "total"
+
+# ============================================================================
+# Setting 4: Ablation Studies - Remove ONE intermediate timepoint at a time
+# ============================================================================
+# Each ablation removes exactly one intermediate timepoint to assess its
+# marginal contribution to trajectory learning.
+
+# Ablation 1: Remove T1 timepoint
+setting4_ablation_remove_T1:
+  name: "GSE234181-Setting4-Ablation: Remove T1"
+  description: "Ablation study: remove T1 to assess its marginal contribution"
+  time_points: ["T0", "T2", "T3"]
+  total_cells: 4000
+  cells_per_timepoint: null
+  min_cells_required: 500
+  balance_strategy: "total"
+
+# Ablation 2: Remove T2 timepoint
+setting4_ablation_remove_T2:
+  name: "GSE234181-Setting4-Ablation: Remove T2"
+  description: "Ablation study: remove T2 to assess its marginal contribution"
+  time_points: ["T0", "T1", "T3"]
+  total_cells: 4000
+  cells_per_timepoint: null
+  min_cells_required: 500
+  balance_strategy: "total"
+
+# ============================================================================
+# Setting 5: Label Shuffled - Shuffle intermediate timepoint labels
+# ============================================================================
+setting5_label_shuffled:
+  name: "GSE234181-Setting5: Label Shuffled (Intermediate)"
+  description: "Shuffle labels among intermediate timepoints: T1, T2"
+  
+  # Time points to include (all 4)
+  time_points: ["T0", "T1", "T2", "T3"]
+  
+  # Boundary timepoints (labels NOT shuffled)
+  boundary_timepoints: ["T0", "T3"]
+  
+  # Intermediate timepoints (labels TO BE shuffled)
+  intermediate_timepoints: ["T1", "T2"]
+  
+  # Total cells
+  total_cells: 4000
+  cells_per_timepoint: null
+  
+  # Validation
+  min_cells_required: 500
+  
+  # Balance strategy
+  balance_strategy: "total"
+  
+  # Shuffle parameters
+  shuffle_params:
+    shuffle_seed: 42
+    shuffle_intermediate_only: true
+
+# ============================================================================
+# Setting 6: Interpolated - Generate intermediate timepoints
+# ============================================================================
+setting6_interpolated:
+  name: "GSE234181-Setting6: Interpolated Intermediate States"
+  description: "Boundary points (T0, T3) are real; intermediate points (T1, T2) are linearly interpolated"
+  
+  # Time points to include (all 4)
+  time_points: ["T0", "T1", "T2", "T3"]
+  
+  # Total cells
+  total_cells: 3000  # 4 timepoints × 750 = 3,000 cells
+  cells_per_timepoint: null
+  
+  # Validation
+  min_cells_required: 750
+  
+  # Balance strategy
+  balance_strategy: "total"
+  
+  # Interpolation parameters
+  interpolation_params:
+    boundary_timepoints: ["T0", "T3"]  # Real data
+    intermediate_timepoints: ["T1", "T2"]  # To be interpolated
+    n_samples_per_timepoint: 750
+    time_to_hours:
+      "T0": 0.0
+      "T1": 24.0
+      "T2": 48.0
+      "T3": 72.0
 
 # Data validation settings
 validation:
-  check_all_timepoints_present: true  # Ensure both train and test have all time points
-  warn_on_filtered_labels: true  # Warn if any cells are filtered due to unlisted labels
-  check_sufficient_cells: true  # Check min_cells_required for each time point
+  check_all_timepoints_present: true
+  warn_on_filtered_labels: true
+  check_sufficient_cells: true

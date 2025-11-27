@@ -282,15 +282,10 @@ def main():
     config = config_loader.load_experiment_config(args.config_file)
     
     # Override output directory if specified
+    # 直接使用传入的 output_dir，不追加任何子目录
     if args.output_dir is not None:
-        original_output = Path(config['settings']['output_dir'])
-        base_output = Path(args.output_dir)
-        
-        # Preserve relative structure
-        relative_parts = original_output.parts[-2:]
-        new_output_dir = base_output / Path(*relative_parts)
-        config['settings']['output_dir'] = str(new_output_dir)
-        print(f"Output directory overridden: {new_output_dir}")
+        config['settings']['output_dir'] = args.output_dir
+        print(f"Output directory overridden: {args.output_dir}")
     
     # Setup logging
     logger = setup_logging(config)

@@ -1,0 +1,239 @@
+# ============================================================================
+# Data Configuration: EMT Cook Dataset - E2M2E (Full Trajectory with Reversal)
+# ============================================================================
+# This file defines the data source, label mappings, and setting-specific
+# configurations for training/testing data splits.
+# 
+# E2M2E: Epithelial → Mesenchymal → Epithelial (Full trajectory with reversal)
+# Forward EMT: 0d → 8h → 1d → 3d → 7d
+# Reversal: 7d → 8h_rm → 1d_rm → 3d_rm
+
+# Raw data file information
+data_source:
+  file_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/DATAs/EMT/2024_12_04_Cook_emt_dataset_with_removal.h5ad"
+  obs_time_column: "Ground_truth"  # Column name in adata.obs for time labels
+  
+  # Time label order (cells with labels not in this list will be filtered out with warning)
+  # Forward EMT: 0d → 8h → 1d → 3d → 7d
+  # Reversal: 7d → 8h_rm → 1d_rm → 3d_rm (after removing stimulus)
+  time_labels_order: ["0d", "8h", "1d", "3d", "7d", "8h_rm", "1d_rm", "3d_rm"]
+  
+  # Time intervals between consecutive time points (in hours)
+  time_intervals:
+    # Forward EMT progression
+    "0d-8h": 8
+    "8h-1d": 16
+    "1d-3d": 48
+    "3d-7d": 96
+    # Reversal after stimulus removal
+    "7d-8h_rm": 8
+    "8h_rm-1d_rm": 16
+    "1d_rm-3d_rm": 48
+  
+  # Feature selection
+  n_hvg: 1000  # Number of highly variable genes to select
+
+# Biology-based train/test split
+# Modified to use Mix1+Mix3+Mix4 for training, Mix2 for testing
+biology_split:
+  column_name: "batches"  # Column in adata.obs for split
+  train_values: ["Mix1", "Mix3", "Mix4"]  # Values for training set
+  test_values: ["Mix2"]  # Values for test set
+  train_ratio: 0.8  # Only used if column_name is null (random split)
+
+# ============================================================================
+# Setting 1: Boundary time points only (0d and 3d_rm)
+# ============================================================================
+setting1:
+  name: "E2M2E-Setting1: Boundary (Start + Reversal Endpoint)"
+  description: "Use only start (0d) and reversal endpoint (3d_rm) - 2 timepoints"
+  
+  # Time points to include
+  time_points: ["0d", "3d_rm"]
+  
+  # Number of cells per time point
+  cells_per_timepoint: 4487
+  
+  # Validation
+  min_cells_required: 1000
+  
+  # Balance strategy
+  balance_strategy: "per_timepoint"
+
+# ============================================================================
+# Setting 2: All 8 time points (Full trajectory)
+# ============================================================================
+setting2:
+  name: "E2M2E-Setting2: Full Trajectory (All 8 timepoints)"
+  description: "Use all 8 timepoints: forward EMT (0d→7d) and reversal (7d→3d_rm)"
+  
+  # Time points to include
+  time_points: ["0d", "8h", "1d", "3d", "7d", "8h_rm", "1d_rm", "3d_rm"]
+  
+  # Total cells
+  total_cells: 8974
+  cells_per_timepoint: null
+  
+  # Validation
+  min_cells_required: 1000
+  
+  # Balance strategy
+  balance_strategy: "total"
+
+# ============================================================================
+# Setting 3: Key time points (0d, 7d, 3d_rm)
+# ============================================================================
+setting3:
+  name: "E2M2E-Setting3: Key Timepoints (Start, Peak, Reversal Endpoint)"
+  description: "Use key points: 0d (start), 7d (peak EMT), 3d_rm (reversal endpoint)"
+  
+  # Time points to include
+  time_points: ["0d", "7d", "3d_rm"]
+  
+  # Total cells
+  total_cells: 8974
+  cells_per_timepoint: null
+  
+  # Validation
+  min_cells_required: 1000
+  
+  # Balance strategy
+  balance_strategy: "total"
+
+# ============================================================================
+# Setting 4: Ablation Studies - Remove ONE intermediate timepoint at a time
+# ============================================================================
+# Each ablation removes exactly one intermediate timepoint to assess its
+# marginal contribution to trajectory learning.
+
+# Ablation 1: Remove 8h timepoint
+setting4_ablation_remove_8h:
+  name: "E2M2E-Setting4-Ablation: Remove 8h"
+  description: "Ablation study: remove 8h to assess its marginal contribution"
+  time_points: ["0d", "1d", "3d", "7d", "8h_rm", "1d_rm", "3d_rm"]
+  total_cells: 8974
+  cells_per_timepoint: null
+  min_cells_required: 1000
+  balance_strategy: "total"
+
+# Ablation 2: Remove 1d timepoint
+setting4_ablation_remove_1d:
+  name: "E2M2E-Setting4-Ablation: Remove 1d"
+  description: "Ablation study: remove 1d to assess its marginal contribution"
+  time_points: ["0d", "8h", "3d", "7d", "8h_rm", "1d_rm", "3d_rm"]
+  total_cells: 8974
+  cells_per_timepoint: null
+  min_cells_required: 1000
+  balance_strategy: "total"
+
+# Ablation 3: Remove 3d timepoint
+setting4_ablation_remove_3d:
+  name: "E2M2E-Setting4-Ablation: Remove 3d"
+  description: "Ablation study: remove 3d to assess its marginal contribution"
+  time_points: ["0d", "8h", "1d", "7d", "8h_rm", "1d_rm", "3d_rm"]
+  total_cells: 8974
+  cells_per_timepoint: null
+  min_cells_required: 1000
+  balance_strategy: "total"
+
+# Ablation 4: Remove 7d timepoint
+setting4_ablation_remove_7d:
+  name: "E2M2E-Setting4-Ablation: Remove 7d"
+  description: "Ablation study: remove 7d (peak EMT) to assess its marginal contribution"
+  time_points: ["0d", "8h", "1d", "3d", "8h_rm", "1d_rm", "3d_rm"]
+  total_cells: 8974
+  cells_per_timepoint: null
+  min_cells_required: 1000
+  balance_strategy: "total"
+
+# Ablation 5: Remove 8h_rm timepoint
+setting4_ablation_remove_8h_rm:
+  name: "E2M2E-Setting4-Ablation: Remove 8h_rm"
+  description: "Ablation study: remove 8h_rm (early reversal) to assess its marginal contribution"
+  time_points: ["0d", "8h", "1d", "3d", "7d", "1d_rm", "3d_rm"]
+  total_cells: 8974
+  cells_per_timepoint: null
+  min_cells_required: 1000
+  balance_strategy: "total"
+
+# Ablation 6: Remove 1d_rm timepoint
+setting4_ablation_remove_1d_rm:
+  name: "E2M2E-Setting4-Ablation: Remove 1d_rm"
+  description: "Ablation study: remove 1d_rm to assess its marginal contribution"
+  time_points: ["0d", "8h", "1d", "3d", "7d", "8h_rm", "3d_rm"]
+  total_cells: 8974
+  cells_per_timepoint: null
+  min_cells_required: 1000
+  balance_strategy: "total"
+
+# ============================================================================
+# Setting 5: Label Shuffled - Shuffle intermediate timepoint labels
+# ============================================================================
+setting5_label_shuffled:
+  name: "E2M2E-Setting5: Label Shuffled (Intermediate)"
+  description: "Shuffle labels among intermediate timepoints: 8h, 1d, 3d, 7d, 8h_rm, 1d_rm"
+  
+  # Time points to include (all 8)
+  time_points: ["0d", "8h", "1d", "3d", "7d", "8h_rm", "1d_rm", "3d_rm"]
+  
+  # Boundary timepoints (labels NOT shuffled)
+  boundary_timepoints: ["0d", "3d_rm"]
+  
+  # Intermediate timepoints (labels TO BE shuffled)
+  intermediate_timepoints: ["8h", "1d", "3d", "7d", "8h_rm", "1d_rm"]
+  
+  # Total cells
+  total_cells: 8974
+  cells_per_timepoint: null
+  
+  # Validation
+  min_cells_required: 1000
+  
+  # Balance strategy
+  balance_strategy: "total"
+  
+  # Shuffle parameters
+  shuffle_params:
+    shuffle_seed: 42
+    shuffle_intermediate_only: true
+
+# ============================================================================
+# Setting 6: Interpolated - Generate intermediate timepoints
+# ============================================================================
+setting6_interpolated:
+  name: "E2M2E-Setting6: Interpolated Intermediate States"
+  description: "Boundary points (0d, 3d_rm) are real; intermediate points are linearly interpolated"
+  
+  # Time points to include (all 8)
+  time_points: ["0d", "8h", "1d", "3d", "7d", "8h_rm", "1d_rm", "3d_rm"]
+  
+  # Total cells
+  total_cells: 6000  # 8 timepoints × 750 = 6,000 cells
+  cells_per_timepoint: null
+  
+  # Validation
+  min_cells_required: 750
+  
+  # Balance strategy
+  balance_strategy: "total"
+  
+  # Interpolation parameters
+  interpolation_params:
+    boundary_timepoints: ["0d", "3d_rm"]  # Real data
+    intermediate_timepoints: ["8h", "1d", "3d", "7d", "8h_rm", "1d_rm"]  # To be interpolated
+    n_samples_per_timepoint: 750
+    time_to_hours:
+      "0d": 0.0
+      "8h": 8.0
+      "1d": 24.0
+      "3d": 72.0
+      "7d": 168.0
+      "8h_rm": 176.0   # 168 + 8
+      "1d_rm": 192.0   # 168 + 24
+      "3d_rm": 240.0   # 168 + 72
+
+# Data validation settings
+validation:
+  check_all_timepoints_present: true
+  warn_on_filtered_labels: true
+  check_sufficient_cells: true

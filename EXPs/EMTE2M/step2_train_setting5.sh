@@ -57,7 +57,7 @@ echo ""
 # Configuration
 CONFIG_FILE="experiment_EMT_Part1_setting5_label_shuffled.yaml"
 CONFIG_DIR="$PROJECT_ROOT/configs/EMT_E2M"
-OUTPUT_DIR="/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/EMT_E2M/Setting5_LabelShuffled"
+OUTPUT_DIR="/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/EMT_E2M/Setting5"
 
 # Check if config file exists
 if [ ! -f "$CONFIG_DIR/$CONFIG_FILE" ]; then
