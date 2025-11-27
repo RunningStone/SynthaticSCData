@@ -15,12 +15,75 @@ Date: 2024-11-24
 import argparse
 import sys
 from pathlib import Path
+import yaml
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from Analyser.data_split_analyzer import DataSplitAnalyzer
 from Analyser.model_param_analyzer import ModelParamAnalyzer
+
+
+def load_settings_from_yaml(data_config_path: str) -> tuple:
+    """
+    Load settings configuration from data YAML file.
+    
+    Args:
+        data_config_path: Path to data configuration YAML
+        
+    Returns:
+        Tuple of (settings_config, group_definitions, time_labels)
+    """
+    with open(data_config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Get time labels from config
+    time_labels = config.get('data_source', {}).get('time_labels_order', [])
+    
+    # Extract settings from YAML
+    settings_config = {}
+    
+    # Look for setting keys in the config
+    for key, value in config.items():
+        if key.startswith('setting') and isinstance(value, dict):
+            if 'time_points' in value:
+                settings_config[key] = value['time_points']
+    
+    # If no settings found, return empty
+    if not settings_config:
+        print(f"⚠️  Warning: No settings found in {data_config_path}")
+        return {}, {}, time_labels
+    
+    # Auto-generate group definitions based on setting names
+    # Group settings by common patterns
+    group_definitions = {}
+    
+    # Check if there are ablation settings
+    ablation_settings = [k for k in settings_config.keys() if 'ablation' in k.lower()]
+    regular_settings = [k for k in settings_config.keys() if 'ablation' not in k.lower() 
+                        and 'shuffled' not in k.lower() and 'interpolated' not in k.lower()]
+    special_settings = [k for k in settings_config.keys() if 'shuffled' in k.lower() 
+                        or 'interpolated' in k.lower()]
+    
+    if regular_settings:
+        group_definitions['regular'] = regular_settings
+    if ablation_settings:
+        group_definitions['ablation'] = ablation_settings
+    if special_settings:
+        group_definitions['special'] = special_settings
+    
+    print(f"\n✓ Loaded {len(settings_config)} settings from YAML:")
+    for name, timepoints in settings_config.items():
+        print(f"  - {name}: {timepoints}")
+    
+    print(f"\n✓ Time labels order: {time_labels}")
+    
+    if group_definitions:
+        print(f"\n✓ Auto-generated groups:")
+        for group, settings in group_definitions.items():
+            print(f"  - {group}: {settings}")
+    
+    return settings_config, group_definitions, time_labels
 
 
 def run_data_split_analysis(
@@ -182,32 +245,21 @@ def main():
     # PART 1: Data Split Analysis
     # =========================================================================
     if not args.skip_data:
-        # Define settings configuration
-        # These are the time points for each experimental setting
-        settings_config = {
-            'setting1': ['0d', '7d'],  # Boundary only
-            'setting2': ['0d', '3d', '7d'],  # With one intermediate
-            'setting3': ['0d', '8h', '1d', '3d', '7d'],  # Full forward trajectory
-            'setting4': ['0d', '8h', '1d', '3d', '7d', '8h_rm', '1d_rm', '3d_rm'],  # With reversal
-            'setting5': ['0d', '3d_rm'],  # Reversal boundary
-            'setting6': ['0d', '7d', '3d_rm'],  # Forward peak + reversal endpoint
-        }
+        # Load settings configuration dynamically from YAML
+        settings_config, group_definitions, time_labels = load_settings_from_yaml(args.data_config)
         
-        # Define experimental groups for fair comparison
-        # Settings in the same group should use the same total number of cells
-        group_definitions = {
-            'forward_only': ['setting1', 'setting2', 'setting3'],
-            'with_reversal': ['setting4', 'setting5', 'setting6']
-        }
-        
-        data_results = run_data_split_analysis(
-            data_config_path=args.data_config,
-            output_dir=str(output_dir),
-            settings_config=settings_config,
-            group_definitions=group_definitions,
-            min_cells_per_category=args.min_cells,
-            bottleneck_percentage=args.bottleneck_pct
-        )
+        if not settings_config:
+            print("❌ ERROR: No settings found in data config. Skipping data split analysis.")
+            data_results = None
+        else:
+            data_results = run_data_split_analysis(
+                data_config_path=args.data_config,
+                output_dir=str(output_dir),
+                settings_config=settings_config,
+                group_definitions=group_definitions if group_definitions else None,
+                min_cells_per_category=args.min_cells,
+                bottleneck_percentage=args.bottleneck_pct
+            )
     else:
         print("\n⏭️  Skipping data split analysis")
         data_results = None
@@ -216,6 +268,18 @@ def main():
     # PART 2: Model Parameter Analysis
     # =========================================================================
     if not args.skip_model:
+        # Get time labels from YAML if not already loaded
+        if not args.skip_data and 'time_labels' in dir():
+            model_time_labels = time_labels
+        else:
+            _, _, model_time_labels = load_settings_from_yaml(args.data_config)
+        
+        # Use time labels from config, or default if not available
+        if not model_time_labels:
+            model_time_labels = ['T0', 'T1', 'T2', 'T3']  # Default fallback
+        
+        n_timepoints = len(model_time_labels)
+        
         # Define model configurations to analyze
         # Format: model_name -> (model_type, config_dict)
         # Note: All models use 'dimension' as the parameter name for input dimension
@@ -238,17 +302,19 @@ def main():
             }),
             'ConditionalVAE': ('vae', {
                 'dimension': args.input_dim,
-                'n_timepoints': 5,
+                'n_timepoints': n_timepoints,
                 'latent_dim': 64,
                 'hidden_dims': [256, 256]
             }),
             'BatchOT': ('batch_ot', {
                 'dimension': args.input_dim,
-                'n_timepoints': 4,
-                'time_labels': ['0d', '1d', '3d', '7d'],  # 4 timepoints
+                'n_timepoints': n_timepoints - 1,  # BatchOT uses n-1 transitions
+                'time_labels': model_time_labels,
                 'hidden_dims': [256, 256, 256]
             }),
         }
+        
+        print(f"\n✓ Using {n_timepoints} timepoints for model analysis: {model_time_labels}")
         
         model_results = run_model_param_analysis(
             output_dir=str(output_dir),
