@@ -18,19 +18,18 @@ configs:
 data_setting: "setting1"
 
 data_sampling_override:
-  cells_per_timepoint: 2000
+  cells_per_timepoint: 11696
   # Setting1: 2 timepoints × 2,000 = 4,000 total samples
 
 models_to_train:
-  - name: "sb_mlplus"
+  - name: "sb"
     enabled: true
     override_params:
       training:
         epochs: 200
         batch_size: 64
-        early_stopping_patience: 30
   
-  - name: "batch_ot"
+  - name: "ot"
     enabled: true
     override_params:
       training:

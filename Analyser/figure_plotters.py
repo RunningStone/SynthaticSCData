@@ -893,3 +893,165 @@ def extract_metrics_from_results(
         return model_data['metrics']
     
     return model_data
+
+
+def plot_phate_dynamic_grid(
+    phate_coords: np.ndarray,
+    real_labels: np.ndarray,
+    time_labels: List[str],
+    generated_coords_by_setting: Dict[str, Dict[str, np.ndarray]],
+    start_timepoint: str,
+    end_timepoint: str,
+    output_path: Path,
+    setting_colors: Optional[Dict[str, str]] = None,
+    figsize: Optional[Tuple[int, int]] = None,
+    dpi: int = 300
+) -> Path:
+    """
+    Create a dynamic PHATE embedding grid based on available models.
+    
+    Row 1: Real data views (all categories, start/end highlighted, intermediate highlighted)
+    Row 2+: One row per setting, with columns for each available model
+    
+    Args:
+        phate_coords: PHATE coordinates for all data (real + generated combined)
+        real_labels: Labels for real data points
+        time_labels: List of time label strings
+        generated_coords_by_setting: Dict mapping setting_name -> {model_name -> PHATE coords}
+            e.g., {'Setting1': {'ot': coords, 'sb': coords}, 'Setting2': {'batch_ot': coords}}
+        start_timepoint: Start timepoint label (e.g., '0d')
+        end_timepoint: End timepoint label (e.g., '7d')
+        output_path: Path to save the figure
+        setting_colors: Optional dict mapping setting_name -> color
+        figsize: Figure size (auto-calculated if None)
+        dpi: DPI for saving
+    
+    Returns:
+        Path to saved figure
+    """
+    # Determine grid dimensions
+    n_settings = len(generated_coords_by_setting)
+    max_models_per_setting = max(len(models) for models in generated_coords_by_setting.values()) if generated_coords_by_setting else 0
+    n_cols = max(3, max_models_per_setting)  # At least 3 columns for real data row
+    n_rows = 1 + n_settings  # 1 row for real data + 1 row per setting
+    
+    if figsize is None:
+        figsize = (5 * n_cols, 5 * n_rows)
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+    
+    # Ensure axes is 2D
+    if n_rows == 1:
+        axes = axes.reshape(1, -1)
+    if n_cols == 1:
+        axes = axes.reshape(-1, 1)
+    
+    # Number of real samples
+    n_real = len(real_labels)
+    real_coords = phate_coords[:n_real]
+    
+    # Define colors for each timepoint
+    colors = plt.cm.tab10(np.linspace(0, 0.9, len(time_labels)))
+    tp_colors = {tp: colors[i] for i, tp in enumerate(time_labels)}
+    
+    # Default setting colors
+    if setting_colors is None:
+        default_colors = ['#e74c3c', '#3498db', '#2ecc71', '#9b59b6', '#f39c12', '#1abc9c']
+        setting_colors = {name: default_colors[i % len(default_colors)] 
+                         for i, name in enumerate(generated_coords_by_setting.keys())}
+    
+    # =========================================================================
+    # Row 1: Real data views
+    # =========================================================================
+    
+    # Row 1, Col 1: All categories with different colors
+    ax = axes[0, 0]
+    for time_idx, time_label in enumerate(time_labels):
+        mask = (real_labels == time_idx)
+        ax.scatter(real_coords[mask, 0], real_coords[mask, 1],
+                  c=[tp_colors[time_label]], label=time_label,
+                  alpha=0.6, s=15, edgecolors='none')
+    ax.set_title('Real Data: All Categories', fontweight='bold', fontsize=11)
+    ax.legend(loc='best', fontsize=8, framealpha=0.9, markerscale=1.5)
+    ax.set_xlabel('PHATE 1', fontsize=10)
+    ax.set_ylabel('PHATE 2', fontsize=10)
+    ax.grid(alpha=0.3)
+    
+    # Row 1, Col 2: Start/end highlighted, others gray
+    ax = axes[0, 1]
+    for time_idx, time_label in enumerate(time_labels):
+        mask = (real_labels == time_idx)
+        if time_label in [start_timepoint, end_timepoint]:
+            ax.scatter(real_coords[mask, 0], real_coords[mask, 1],
+                      c=[tp_colors[time_label]], label=time_label,
+                      alpha=0.7, s=20, edgecolors='none')
+        else:
+            ax.scatter(real_coords[mask, 0], real_coords[mask, 1],
+                      c='lightgray', alpha=0.3, s=10, edgecolors='none')
+    ax.set_title(f'Highlighted: {start_timepoint} & {end_timepoint}', fontweight='bold', fontsize=11)
+    ax.legend(loc='best', fontsize=8, framealpha=0.9, markerscale=1.5)
+    ax.set_xlabel('PHATE 1', fontsize=10)
+    ax.set_ylabel('PHATE 2', fontsize=10)
+    ax.grid(alpha=0.3)
+    
+    # Row 1, Col 3: Intermediate highlighted, start/end gray
+    ax = axes[0, 2]
+    for time_idx, time_label in enumerate(time_labels):
+        mask = (real_labels == time_idx)
+        if time_label not in [start_timepoint, end_timepoint]:
+            ax.scatter(real_coords[mask, 0], real_coords[mask, 1],
+                      c=[tp_colors[time_label]], label=time_label,
+                      alpha=0.7, s=20, edgecolors='none')
+        else:
+            ax.scatter(real_coords[mask, 0], real_coords[mask, 1],
+                      c='lightgray', alpha=0.3, s=10, edgecolors='none')
+    ax.set_title('Highlighted: Intermediate', fontweight='bold', fontsize=11)
+    ax.legend(loc='best', fontsize=8, framealpha=0.9, markerscale=1.5)
+    ax.set_xlabel('PHATE 1', fontsize=10)
+    ax.set_ylabel('PHATE 2', fontsize=10)
+    ax.grid(alpha=0.3)
+    
+    # Hide extra columns in row 1 if any
+    for col_idx in range(3, n_cols):
+        axes[0, col_idx].axis('off')
+    
+    # =========================================================================
+    # Row 2+: Setting rows with dynamic model columns
+    # =========================================================================
+    for row_idx, (setting_name, model_coords) in enumerate(generated_coords_by_setting.items(), start=1):
+        setting_color = setting_colors.get(setting_name, '#e74c3c')
+        model_names = list(model_coords.keys())
+        
+        for col_idx in range(n_cols):
+            ax = axes[row_idx, col_idx]
+            
+            if col_idx < len(model_names):
+                model_name = model_names[col_idx]
+                gen_coords = model_coords[model_name]
+                
+                # Plot real data in gray
+                ax.scatter(real_coords[:, 0], real_coords[:, 1],
+                          c='lightgray', alpha=0.3, s=10, edgecolors='none', label='Real')
+                
+                # Plot generated data
+                ax.scatter(gen_coords[:, 0], gen_coords[:, 1],
+                          c=setting_color, alpha=0.7, s=25, edgecolors='black',
+                          linewidths=0.5, label='Generated', marker='*')
+                
+                ax.set_title(f'{setting_name}: {model_name.upper()}', fontweight='bold', fontsize=11)
+                ax.legend(loc='best', fontsize=8, framealpha=0.9, markerscale=1.5)
+                ax.set_xlabel('PHATE 1', fontsize=10)
+                ax.set_ylabel('PHATE 2', fontsize=10)
+                ax.grid(alpha=0.3)
+            else:
+                # Hide unused subplot
+                ax.axis('off')
+    
+    plt.suptitle('Generation Quality Visualization (PHATE)', fontsize=14, fontweight='bold', y=1.02)
+    plt.tight_layout()
+    
+    # Save
+    fig.savefig(output_path, dpi=dpi, bbox_inches='tight')
+    plt.close()
+    
+    return output_path

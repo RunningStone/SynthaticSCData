@@ -4,29 +4,87 @@
 
 本项目研究单细胞时间序列数据建模中的核心科学问题：**在学习细胞状态转换动力学时，完整的时间轨迹信息相比仅有起止点信息能否带来显著的性能提升？** 这一问题直接影响实验设计和数据收集策略的制定——若中间时间点对模型泛化能力贡献有限，则可节省大量实验成本。
 
-实验采用EMT（上皮-间质转化）数据集作为测试平台，该数据集包含前向EMT过程（0d→8h→1d→3d→7d）和刺激移除后的逆转过程（7d→8h_rm→1d_rm→3d_rm），共8个时间点。通过控制变量法设计6个实验设置，在保持总样本量恒定（8,974 cells）的前提下，系统性地对比不同时间分辨率对模型性能的影响：
-
-| Setting | 时间点配置 | 时间分辨率 | 研究目标 |
-|---------|-----------|-----------|---------|
-| Setting1 | 0d, 7d | 边界点 | 基线：仅起止点信息 |
-| Setting2 | 0d→8h→1d→3d→7d | 完整轨迹 | 高时间分辨率的价值 |
-| Setting3 | 0d, 8h, 7d | 关键点 | 早期响应点的贡献 |
-| Setting5 | 0d, 3d_rm | 跨峰值边界 | 长距离插值能力 |
-| Setting6 | 0d, 7d, 3d_rm | 含峰值关键点 | 峰值信息对逆转预测的影响 |
-
 核心假设是：若模型能从中间时间点学习到局部动力学规律 $\frac{d\mathbf{x}}{dt} \approx \mathbf{v}(\mathbf{x}, t)$，则应比仅学习全局映射 $\mathbf{x}_{t_0} \mapsto \mathbf{x}_{t_1}$ 的模型具有更好的泛化能力。
 
 ---
 
-## 二、模块设计思路
+## 二、三个实验集合
+
+项目现包含三个独立的实验集合，每个集合使用不同的生物学数据，但遵循相同的Setting设计逻辑：
+
+### 2.1 EMT_E2M（前向EMT）
+
+**数据来源**: Cook EMT数据集（仅前向过程）
+**时间轨迹**: 0d → 8h → 1d → 3d → 7d（5个时间点）
+**特征维度**: 1000 HVG
+**总样本量**: ~8,974 cells
+
+| Setting | 时间点配置 | 研究目标 |
+|---------|-----------|---------|
+| Setting1 | 0d, 7d | 基线：仅起止点 |
+| Setting2 | 0d→8h→1d→3d→7d | 完整轨迹 |
+| Setting3 | 0d, 8h, 7d | 关键时间点 |
+| Setting4 | 消融实验（移除8h/1d/3d） | 各时间点边际贡献 |
+| Setting5 | 标签打乱 | 时间信息重要性 |
+| Setting6 | 插值中间点 | 合成数据价值 |
+| Setting7 | 熵演化分析 | 轨迹不确定性 |
+
+### 2.2 EMT_E2M2E（完整EMT+逆转）
+
+**数据来源**: Cook EMT数据集（含逆转过程）
+**时间轨迹**: 0d → 8h → 1d → 3d → 7d → 8h_rm → 1d_rm → 3d_rm（8个时间点）
+**特征维度**: 1000 HVG
+**总样本量**: ~8,968 cells
+
+| Setting | 时间点配置 | 研究目标 |
+|---------|-----------|---------|
+| Setting1 | 0d, 3d_rm | 基线：起点到逆转终点 |
+| Setting2 | 全部8个时间点 | 完整轨迹 |
+| Setting3 | 0d, 7d, 3d_rm | 关键点（含峰值） |
+| Setting4 | 消融实验（移除各中间点） | 各时间点边际贡献 |
+| Setting5 | 标签打乱 | 时间信息重要性 |
+| Setting6 | 插值中间点 | 合成数据价值 |
+
+### 2.3 GSE234181（休眠-觉醒）
+
+**数据来源**: GSE234181休眠觉醒数据集
+**时间轨迹**: T0 → T1 → T2 → T3（4个时间点）
+**特征维度**: 100 HVG
+**总样本量**: ~23,392 cells
+
+| Setting | 时间点配置 | 研究目标 |
+|---------|-----------|---------|
+| Setting1 | T0, T3 | 基线：仅起止点 |
+| Setting2 | T0→T1→T2→T3 | 完整轨迹 |
+| Setting3 | T0, T1, T3 | 关键时间点 |
+| Setting4 | 消融实验（移除T1/T2） | 各时间点边际贡献 |
+| Setting5 | 标签打乱 | 时间信息重要性 |
+| Setting6 | 插值中间点 | 合成数据价值 |
+
+### 2.4 Setting设计逻辑统一性
+
+三个实验集合遵循相同的Setting设计原则：
+
+- **Setting1**: 边界点基线（仅起止点）
+- **Setting2**: 完整时间轨迹
+- **Setting3**: 关键时间点（起点+早期响应/中间峰值+终点）
+- **Setting4**: 消融实验（逐一移除中间时间点）
+- **Setting5**: 标签打乱（破坏时间顺序信息）
+- **Setting6**: 插值实验（用合成数据替代真实中间点）
+
+参数（如cells_per_timepoint、total_cells）根据各数据集实际情况微调。
+
+---
+
+## 三、模块设计思路
 
 系统采用配置驱动的模块化架构，将数据、模型、训练和评估解耦为独立模块，通过YAML配置文件组合实验设置。
 
-### 2.1 数据模块 (`Data/`)
+### 3.1 数据模块 (`Data/`)
 
 `RealDataLoader` 类负责h5ad文件读取、高变基因筛选（默认1000个）和生物学划分（确保训练/测试集来自不同实验批次）。`ConfigLoader` 类实现分层配置加载，支持数据配置、模型配置和实验配置的分离与合并。采样策略支持 `per_timepoint`（边界设置）和 `total`（多时间点设置）两种模式。
 
-### 2.2 模型模块 (`Model/`)
+### 3.2 模型模块 (`Model/`)
 
 实现五种生成模型，核心是基于Schrödinger Bridge理论的动力学建模方法：
 
@@ -38,21 +96,21 @@ $$d\mathbf{x} = \mathbf{b}(\mathbf{x}, t)dt + \sqrt{2D}d\mathbf{W}_t$$
 
 **对比基线**：Optimal Transport（确定性映射，最小化 $W_2$ 距离）、Conditional VAE（变分推断框架）、Batch OT（分段OT映射的顺序组合）。所有模型参数量已平衡至~10M，确保公平对比。
 
-### 2.3 训练模块 (`Trainer/`)
+### 3.3 训练模块 (`Trainer/`)
 
 `SBTrainer`、`UnifiedTrainer`、`BatchOTTrainer` 三个训练器类共享统一的优化框架：AdamW优化器（lr=5e-4）、ReduceLROnPlateau学习率调度、早停机制（patience=30）、梯度裁剪（max_norm=5.0）。`Evaluator` 类计算10个标准指标，覆盖分布匹配（FD, W距离, MMD）、点估计精度（MAE, PCC, R²）和结构保持（JS散度、相关矩阵差异）等维度。
 
-### 2.4 分析模块 (`Analyser/`)
+### 3.4 分析模块 (`Analyser/`)
 
 `MultiSettingVisualizer` 类实现跨设置的模型对比，支持PHATE（保留流形结构）和LMNN+PCA（强调时间点分离）两种降维可视化，自动生成指标对比图和CSV结果文件。
 
 ---
 
-## 三、实验结果摘要
+## 四、实验结果摘要
 
 基于 `OUTPUTs/EMT_E2M/Setting*/evaluation_results.json` 的评估结果，提取关键指标进行对比：
 
-### 3.1 核心指标对比表
+### 4.1 核心指标对比表（EMT_E2M）
 
 | Setting | Model | FD (↓) | MAE (↓) | PCC (↑) | W距离 (↓) | MMD (↓) | JS散度 (↓) |
 |---------|-------|--------|---------|---------|-----------|---------|------------|
@@ -67,7 +125,7 @@ $$d\mathbf{x} = \mathbf{b}(\mathbf{x}, t)dt + \sqrt{2D}d\mathbf{W}_t$$
 | **S5** (跨峰值) | SB_MLPlus | **44,481** | 9.87 | 0.711 | **2.02** | **0.114** | 0.182 |
 | **S5** (跨峰值) | VAE | 289,444 | **9.40** | **0.728** | 3.92 | 0.216 | 0.414 |
 
-### 3.2 关键发现
+### 4.2 关键发现
 
 **发现一：SB_MLPlus在分布匹配指标上显著优于所有基线**。在Setting2/3/5中，SB_MLPlus的Fréchet距离（~44K）比VAE（~300K）低一个数量级，Wasserstein距离（~2.0）和MMD（~0.11）也大幅领先。这表明时间依赖的漂移场建模能更好地捕捉细胞群体的分布特征。
 
@@ -77,9 +135,51 @@ $$d\mathbf{x} = \mathbf{b}(\mathbf{x}, t)dt + \sqrt{2D}d\mathbf{W}_t$$
 
 **发现四：边界设置（S1）的SB模型表现较差**。仅有起止点时，基础SB模型的FD高达485K，远逊于OT和VAE，说明SB框架需要中间时间点的监督信号才能发挥优势。
 
-### 3.3 结论
+### 4.3 结论
 
 实验结果支持核心假设：完整时间轨迹信息确实能提升模型的分布匹配能力，但这一优势主要体现在专门设计的SB_MLPlus架构上。对于点估计任务，简单的VAE模型已足够有效。从实验设计角度，采集少量关键时间点（如早期响应点）可能是成本效益最优的策略。
+
+---
+
+## 五、项目结构
+
+```
+SynthaticSCData/
+├── configs/                          # 配置文件目录
+│   ├── EMT_E2M/                      # 前向EMT实验配置
+│   │   ├── data_EMT_E2M_Cook.yaml   # 数据配置
+│   │   ├── models_default.yaml       # 模型配置
+│   │   └── experiment_EMT_Part1_setting*.yaml  # 各Setting实验配置
+│   ├── EMT_E2M2E/                    # 完整EMT+逆转实验配置
+│   │   ├── data_EMT_E2M2E.yaml
+│   │   └── experiment_EMT_E2M2E_setting*.yaml
+│   └── GSE234181/                    # 休眠-觉醒实验配置
+│       ├── data_GSE234181.yaml
+│       └── experiment_GSE234181_setting*.yaml
+├── EXPs/                             # 实验脚本目录
+│   ├── step0_setup_env.sh           # 环境设置
+│   ├── step1_run_precalc.sh         # 预计算分析
+│   ├── EMTE2M/                       # 前向EMT实验脚本
+│   │   ├── step1_run_precalc_EMT_E2M.sh
+│   │   ├── step2_train_setting*.sh
+│   │   ├── step3_run_inference.sh
+│   │   └── step4_analyse_vis.sh
+│   ├── EMT_E2M2E/                    # 完整EMT实验脚本
+│   │   └── ... (同上结构)
+│   └── GSE234181/                    # 休眠-觉醒实验脚本
+│       └── ... (同上结构)
+├── Workers/                          # Python工作脚本
+├── Data/                             # 数据加载模块
+├── Model/                            # 模型实现
+├── Trainer/                          # 训练器
+└── Analyser/                         # 分析可视化
+```
+
+**实验工作流**：
+1. `step1_run_precalc.sh` - 预计算数据分析，确定最优参数
+2. `step2_train_setting*.sh` - 训练各Setting的模型
+3. `step3_run_inference.sh` - 运行推理生成轨迹
+4. `step4_analyse_vis.sh` - 可视化和指标对比
 
 ---
 

@@ -11,11 +11,16 @@ Architecture:
 - Latent Transition: z_T = z_0 + time_condition
 - Decoder: z -> x̂ reconstruction
 - Loss: VAE (reconstruction + KL) + MMD (distribution matching)
+
+Features:
+- Built-in data normalization to handle datasets with different value ranges
+- Normalization parameters are saved in checkpoint for consistent inference
 """
 
 import torch
 import torch.nn as nn
-from typing import List, Tuple, Optional
+from torch.utils.data import DataLoader
+from typing import List, Tuple, Optional, Dict
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -102,7 +107,9 @@ class ConditionalVAEModel(TimeConditionedModel):
         beta: float = 1.0,
         mmd_weight: float = 1.0,
         mmd_kernel: str = 'rbf',
-        mmd_bandwidth: float = 1.0
+        mmd_bandwidth: float = 1.0,
+        normalize_data: bool = True,
+        normalization_method: str = 'minmax'
     ):
         """
         Args:
@@ -117,6 +124,8 @@ class ConditionalVAEModel(TimeConditionedModel):
             mmd_weight: Weight for MMD loss
             mmd_kernel: Kernel type for MMD ('rbf' or 'linear')
             mmd_bandwidth: Bandwidth for RBF kernel
+            normalize_data: Whether to normalize input data (default: True)
+            normalization_method: 'minmax' or 'zscore' (default: 'minmax')
         """
         # Create time_labels if not provided
         if 'time_labels' not in locals():
@@ -134,6 +143,19 @@ class ConditionalVAEModel(TimeConditionedModel):
         self.mmd_weight = mmd_weight
         self.mmd_kernel = mmd_kernel
         self.mmd_bandwidth = mmd_bandwidth
+        
+        # Normalization settings
+        self.normalize_data = normalize_data
+        self.normalization_method = normalization_method
+        
+        # Register normalization parameters as buffers (saved in state_dict)
+        # Using buffers ensures they are saved/loaded with the model
+        self.register_buffer('data_min', torch.zeros(dimension))
+        self.register_buffer('data_max', torch.ones(dimension))
+        self.register_buffer('data_mean', torch.zeros(dimension))
+        self.register_buffer('data_std', torch.ones(dimension))
+        # Use a buffer for normalization_fitted flag so it's saved with state_dict
+        self.register_buffer('_normalization_fitted', torch.tensor(False))
         
         # Time embedding: maps time index to embedding vector
         self.time_embedding = nn.Embedding(n_timepoints, time_embedding_dim)
@@ -173,6 +195,16 @@ class ConditionalVAEModel(TimeConditionedModel):
         
         self.decoder = nn.Sequential(*decoder_layers)
     
+    @property
+    def normalization_fitted(self) -> bool:
+        """Check if normalizer has been fitted."""
+        return bool(self._normalization_fitted.item())
+    
+    @normalization_fitted.setter
+    def normalization_fitted(self, value: bool):
+        """Set normalization fitted flag."""
+        self._normalization_fitted.fill_(value)
+    
     def _get_activation(self, activation: str) -> nn.Module:
         """Get activation function"""
         if activation == 'relu':
@@ -185,6 +217,128 @@ class ConditionalVAEModel(TimeConditionedModel):
             return nn.LeakyReLU(0.2)
         else:
             raise ValueError(f"Unknown activation: {activation}")
+    
+    # =========================================================================
+    # Normalization Methods
+    # =========================================================================
+    
+    def fit_normalizer(self, train_loader: DataLoader) -> None:
+        """
+        Fit normalization parameters from training data.
+        
+        Should be called before training starts. Computes min/max or mean/std
+        from the training set and stores them as model buffers.
+        
+        Args:
+            train_loader: Training data loader
+        """
+        if not self.normalize_data:
+            print("Normalization disabled, skipping fit_normalizer")
+            return
+        
+        print(f"Fitting normalizer using {self.normalization_method} method...")
+        
+        # Collect all training data statistics
+        all_data = []
+        for X, _ in train_loader:
+            all_data.append(X)
+        
+        all_data = torch.cat(all_data, dim=0)
+        
+        if self.normalization_method == 'minmax':
+            # Min-Max normalization: x_norm = (x - min) / (max - min)
+            data_min = all_data.min(dim=0)[0]
+            data_max = all_data.max(dim=0)[0]
+            
+            # Avoid division by zero for constant features
+            range_vals = data_max - data_min
+            range_vals[range_vals == 0] = 1.0
+            
+            self.data_min.copy_(data_min)
+            self.data_max.copy_(data_max)
+            
+            print(f"  Data range: [{data_min.min():.2f}, {data_max.max():.2f}]")
+            
+        elif self.normalization_method == 'zscore':
+            # Z-score normalization: x_norm = (x - mean) / std
+            data_mean = all_data.mean(dim=0)
+            data_std = all_data.std(dim=0)
+            
+            # Avoid division by zero for constant features
+            data_std[data_std == 0] = 1.0
+            
+            self.data_mean.copy_(data_mean)
+            self.data_std.copy_(data_std)
+            
+            print(f"  Data mean: {data_mean.mean():.2f}, std: {data_std.mean():.2f}")
+        
+        else:
+            raise ValueError(f"Unknown normalization method: {self.normalization_method}")
+        
+        self.normalization_fitted = True
+        print(f"✓ Normalizer fitted on {len(all_data)} samples")
+    
+    def normalize(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Normalize input data using fitted parameters.
+        
+        Args:
+            x: Input data (batch_size, dimension)
+            
+        Returns:
+            x_norm: Normalized data (batch_size, dimension)
+        """
+        if not self.normalize_data:
+            return x
+        
+        if not self.normalization_fitted:
+            # If not fitted, return as-is (will be fitted before training)
+            return x
+        
+        if self.normalization_method == 'minmax':
+            # x_norm = (x - min) / (max - min)
+            range_vals = self.data_max - self.data_min
+            range_vals[range_vals == 0] = 1.0  # Avoid division by zero
+            x_norm = (x - self.data_min) / range_vals
+        elif self.normalization_method == 'zscore':
+            # x_norm = (x - mean) / std
+            x_norm = (x - self.data_mean) / self.data_std
+        else:
+            x_norm = x
+        
+        return x_norm
+    
+    def denormalize(self, x_norm: torch.Tensor) -> torch.Tensor:
+        """
+        Denormalize data back to original scale.
+        
+        Args:
+            x_norm: Normalized data (batch_size, dimension)
+            
+        Returns:
+            x: Data in original scale (batch_size, dimension)
+        """
+        if not self.normalize_data:
+            return x_norm
+        
+        if not self.normalization_fitted:
+            return x_norm
+        
+        if self.normalization_method == 'minmax':
+            # x = x_norm * (max - min) + min
+            range_vals = self.data_max - self.data_min
+            x = x_norm * range_vals + self.data_min
+        elif self.normalization_method == 'zscore':
+            # x = x_norm * std + mean
+            x = x_norm * self.data_std + self.data_mean
+        else:
+            x = x_norm
+        
+        return x
+    
+    # =========================================================================
+    # Core VAE Methods
+    # =========================================================================
     
     def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -291,9 +445,11 @@ class ConditionalVAEModel(TimeConditionedModel):
         
         Loss = Reconstruction + β * KL + λ * MMD
         
+        Note: All computations are done in normalized space for numerical stability.
+        
         Args:
-            x_source: Source state (batch_size, d)
-            x_target: Target state (batch_size, d)
+            x_source: Source state (batch_size, d) in original scale
+            x_target: Target state (batch_size, d) in original scale
             t_source: Source time indices (batch_size,) as integers, or None
             t_target: Target time indices (batch_size,) as integers, or None
             
@@ -303,6 +459,10 @@ class ConditionalVAEModel(TimeConditionedModel):
         """
         batch_size = x_source.shape[0]
         device = x_source.device
+        
+        # Normalize inputs for stable training
+        x_source_norm = self.normalize(x_source)
+        x_target_norm = self.normalize(x_target)
         
         # Handle time indices
         if t_target is None:
@@ -315,20 +475,22 @@ class ConditionalVAEModel(TimeConditionedModel):
             # Ensure correct dtype
             t_target = t_target.long()
         
-        # Forward pass
-        x_0_recon, x_T_sample, mu, logvar = self.forward(x_source, t_target)
+        # Forward pass (in normalized space)
+        x_0_recon, x_T_sample, mu, logvar = self.forward(x_source_norm, t_target)
         
-        # 1. Reconstruction loss: ||x_0_recon - x_0||²
-        recon_loss = torch.mean((x_0_recon - x_source) ** 2)
+        # 1. Reconstruction loss: ||x_0_recon - x_0||² (in normalized space)
+        recon_loss = torch.mean((x_0_recon - x_source_norm) ** 2)
         
         # 2. KL divergence: KL(q(z_0|x_0) || N(0, I))
         # KL = -0.5 * sum(1 + log(σ²) - μ² - σ²)
-        kl_loss = -0.5 * torch.mean(torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1))
+        # Clamp logvar to prevent numerical instability
+        logvar_clamped = torch.clamp(logvar, min=-10, max=10)
+        kl_loss = -0.5 * torch.mean(torch.sum(1 + logvar_clamped - mu.pow(2) - logvar_clamped.exp(), dim=1))
         
-        # 3. MMD loss: distribution matching between x_T_sample and x_target
+        # 3. MMD loss: distribution matching between x_T_sample and x_target (in normalized space)
         mmd_loss = compute_mmd_loss(
             x_T_sample,
-            x_target,
+            x_target_norm,
             kernel=self.mmd_kernel,
             bandwidth=self.mmd_bandwidth
         )
@@ -352,28 +514,36 @@ class ConditionalVAEModel(TimeConditionedModel):
         time_grid: torch.Tensor,
         t_source_idx: int,
         t_target_idx: int,
-        method: str = 'latent_interpolation'
+        method: str = 'latent_interpolation',
+        return_normalized: bool = False
     ) -> torch.Tensor:
         """
         Generate trajectory from x_0 to target time point.
         
+        Note: Input x_0 is in original scale, output is denormalized back to original scale
+        unless return_normalized=True.
+        
         Args:
-            x_0: Initial state (batch_size, d)
+            x_0: Initial state (batch_size, d) in original scale
             time_grid: Time points (n_time,), should be in [0, 1]
             t_source_idx: Source time index (integer) - typically 0
             t_target_idx: Target time index (integer)
             method: Generation method ('latent_interpolation')
+            return_normalized: If True, return normalized output (default: False)
             
         Returns:
-            trajectory: (batch_size, n_time, d)
+            trajectory: (batch_size, n_time, d) in original scale (or normalized if return_normalized=True)
         """
         batch_size = x_0.shape[0]
         n_time = len(time_grid)
         device = x_0.device
         
         with torch.no_grad():
+            # Normalize input
+            x_0_norm = self.normalize(x_0)
+            
             # Encode initial state (use mean for deterministic generation)
-            mu_0, _ = self.encode(x_0)
+            mu_0, _ = self.encode(x_0_norm)
             
             # Encode target time
             t_target = torch.full((batch_size,), t_target_idx, dtype=torch.long, device=device)
@@ -389,8 +559,13 @@ class ConditionalVAEModel(TimeConditionedModel):
                 # Latent space interpolation: z(t) = (1-t) * z_0 + t * z_T
                 z_t = (1 - t) * mu_0 + t * mu_T
                 
-                # Decode
-                x_t = self.decode(z_t)
-                trajectory[:, i, :] = x_t
+                # Decode (output is in normalized space)
+                x_t_norm = self.decode(z_t)
+                
+                # Denormalize back to original scale
+                if return_normalized:
+                    trajectory[:, i, :] = x_t_norm
+                else:
+                    trajectory[:, i, :] = self.denormalize(x_t_norm)
         
         return trajectory

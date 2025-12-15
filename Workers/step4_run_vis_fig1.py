@@ -39,10 +39,11 @@ from Analyser import (
     DataManager,
     EmbeddingComputer,
     plot_performance_radar,
-    plot_phate_3x3_grid,
+    plot_phate_dynamic_grid,
     extract_metrics_from_results,
     METRICS_CONFIG,
 )
+from Analyser.value_checker import ValueChecker
 from Data import (
     create_data_loader_from_config,
     get_data_for_setting
@@ -161,6 +162,18 @@ def compute_phate_embeddings(
     
     combined_data = np.vstack(all_data)
     logger.info(f"Combined data shape: {combined_data.shape}")
+    
+    # Check for NaN values and handle them
+    nan_count = np.isnan(combined_data).sum()
+    if nan_count > 0:
+        logger.warning(f"Found {nan_count} NaN values in combined data, replacing with 0")
+        combined_data = np.nan_to_num(combined_data, nan=0.0)
+    
+    # Check for infinite values
+    inf_count = np.isinf(combined_data).sum()
+    if inf_count > 0:
+        logger.warning(f"Found {inf_count} infinite values in combined data, clipping")
+        combined_data = np.clip(combined_data, -1e10, 1e10)
     
     # Compute PHATE
     logger.info("Computing PHATE embeddings...")
@@ -283,21 +296,49 @@ def run_fig1_visualization(
     # Load generated data for all models
     logger.info("Loading generated data...")
     
-    # Setting1 models
+    # Initialize value checker
+    value_checker = ValueChecker(nan_threshold=0.1, logger=logger)
+    
+    # Setting1 models - dynamically load all available models from evaluation results
     gen_data_s1 = {}
-    for model_name in ['ot', 'vae', 'sb']:
+    available_models_s1 = list(results_s1.keys())
+    logger.info(f"Available models in Setting1: {available_models_s1}")
+    for model_name in available_models_s1:
         gen_pkl = load_generated_data(setting1_path, model_name)
         if gen_pkl is not None and 'generated_data' in gen_pkl:
             gen_data_s1[model_name] = gen_pkl['generated_data']
             logger.info(f"  Setting1/{model_name}: {len(gen_pkl['generated_data'])} samples")
     
-    # Setting2 models
+    # Validate Setting1 models (filter out NaN models)
+    gen_data_s1, skipped_s1 = value_checker.filter_valid_models(gen_data_s1, results_s1)
+    if skipped_s1:
+        logger.warning(f"Skipped Setting1 models due to invalid data: {skipped_s1}")
+    logger.info(f"Valid Setting1 models after filtering: {list(gen_data_s1.keys())}")
+    
+    # Setting2 models - dynamically load all available models from evaluation results
     gen_data_s2 = {}
-    for model_name in ['batch_ot', 'vae', 'sb_mlplus']:
+    available_models_s2 = list(results_s2.keys())
+    logger.info(f"Available models in Setting2: {available_models_s2}")
+    for model_name in available_models_s2:
         gen_pkl = load_generated_data(setting2_path, model_name)
         if gen_pkl is not None and 'generated_data' in gen_pkl:
             gen_data_s2[model_name] = gen_pkl['generated_data']
             logger.info(f"  Setting2/{model_name}: {len(gen_pkl['generated_data'])} samples")
+    
+    # Validate Setting2 models (filter out NaN models)
+    gen_data_s2, skipped_s2 = value_checker.filter_valid_models(gen_data_s2, results_s2)
+    if skipped_s2:
+        logger.warning(f"Skipped Setting2 models due to invalid data: {skipped_s2}")
+    logger.info(f"Valid Setting2 models after filtering: {list(gen_data_s2.keys())}")
+    
+    # Check if we have any valid models to visualize
+    if not gen_data_s1 and not gen_data_s2:
+        logger.error("No valid models to visualize after filtering. Skipping PHATE visualization.")
+        return {
+            'fig1_1': str(fig1_1_path),
+            'fig1_2': None,
+            'skipped_models': {'Setting1': skipped_s1, 'Setting2': skipped_s2}
+        }
     
     # Combine all generated data for joint embedding
     all_generated = {**{f's1_{k}': v for k, v in gen_data_s1.items()},
@@ -317,34 +358,43 @@ def run_fig1_visualization(
     start_tp = time_labels[0] if time_labels else '0d'
     end_tp = time_labels[-1] if time_labels else '7d'
     
-    # Generate PHATE grid
+    # Prepare data for dynamic grid
+    generated_coords_by_setting = {}
+    if gen_coords_s1:
+        generated_coords_by_setting['Setting1'] = gen_coords_s1
+    if gen_coords_s2:
+        generated_coords_by_setting['Setting2'] = gen_coords_s2
+    
+    logger.info(f"Generating PHATE grid with settings: {list(generated_coords_by_setting.keys())}")
+    for setting_name, coords in generated_coords_by_setting.items():
+        logger.info(f"  {setting_name} models: {list(coords.keys())}")
+    
+    # Generate PHATE grid using dynamic function
     fig1_2_path = fig1_dir / 'Fig1_2.pdf'
-    plot_phate_3x3_grid(
+    plot_phate_dynamic_grid(
         phate_coords=phate_coords,
         real_labels=y_test,
         time_labels=time_labels,
-        generated_coords_setting1=gen_coords_s1,
-        generated_coords_setting2=gen_coords_s2,
+        generated_coords_by_setting=generated_coords_by_setting,
         start_timepoint=start_tp,
         end_timepoint=end_tp,
         output_path=fig1_2_path,
-        figsize=(15, 15),
+        setting_colors={'Setting1': '#e74c3c', 'Setting2': '#3498db'},
         dpi=300
     )
     logger.info(f"Saved: {fig1_2_path}")
     
     # Also save PNG version
     fig1_2_png = fig1_dir / 'Fig1_2.png'
-    plot_phate_3x3_grid(
+    plot_phate_dynamic_grid(
         phate_coords=phate_coords,
         real_labels=y_test,
         time_labels=time_labels,
-        generated_coords_setting1=gen_coords_s1,
-        generated_coords_setting2=gen_coords_s2,
+        generated_coords_by_setting=generated_coords_by_setting,
         start_timepoint=start_tp,
         end_timepoint=end_tp,
         output_path=fig1_2_png,
-        figsize=(15, 15),
+        setting_colors={'Setting1': '#e74c3c', 'Setting2': '#3498db'},
         dpi=300
     )
     

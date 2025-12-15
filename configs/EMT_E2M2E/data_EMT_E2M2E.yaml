@@ -71,8 +71,8 @@ setting2:
   time_points: ["0d", "8h", "1d", "3d", "7d", "8h_rm", "1d_rm", "3d_rm"]
   
   # Total cells
-  total_cells: 8974
-  cells_per_timepoint: null
+  total_cells: 8968
+  cells_per_timepoint: 1121
   
   # Validation
   min_cells_required: 1000
@@ -91,8 +91,8 @@ setting3:
   time_points: ["0d", "7d", "3d_rm"]
   
   # Total cells
-  total_cells: 8974
-  cells_per_timepoint: null
+  total_cells: 8973
+  cells_per_timepoint: 2991
   
   # Validation
   min_cells_required: 1000
@@ -111,8 +111,8 @@ setting4_ablation_remove_8h:
   name: "E2M2E-Setting4-Ablation: Remove 8h"
   description: "Ablation study: remove 8h to assess its marginal contribution"
   time_points: ["0d", "1d", "3d", "7d", "8h_rm", "1d_rm", "3d_rm"]
-  total_cells: 8974
-  cells_per_timepoint: null
+  total_cells: 31409
+  cells_per_timepoint: 4487
   min_cells_required: 1000
   balance_strategy: "total"
 
@@ -121,8 +121,8 @@ setting4_ablation_remove_1d:
   name: "E2M2E-Setting4-Ablation: Remove 1d"
   description: "Ablation study: remove 1d to assess its marginal contribution"
   time_points: ["0d", "8h", "3d", "7d", "8h_rm", "1d_rm", "3d_rm"]
-  total_cells: 8974
-  cells_per_timepoint: null
+  total_cells: 31409
+  cells_per_timepoint: 4487
   min_cells_required: 1000
   balance_strategy: "total"
 
@@ -131,8 +131,8 @@ setting4_ablation_remove_3d:
   name: "E2M2E-Setting4-Ablation: Remove 3d"
   description: "Ablation study: remove 3d to assess its marginal contribution"
   time_points: ["0d", "8h", "1d", "7d", "8h_rm", "1d_rm", "3d_rm"]
-  total_cells: 8974
-  cells_per_timepoint: null
+  total_cells: 31409
+  cells_per_timepoint: 4487
   min_cells_required: 1000
   balance_strategy: "total"
 
@@ -141,8 +141,8 @@ setting4_ablation_remove_7d:
   name: "E2M2E-Setting4-Ablation: Remove 7d"
   description: "Ablation study: remove 7d (peak EMT) to assess its marginal contribution"
   time_points: ["0d", "8h", "1d", "3d", "8h_rm", "1d_rm", "3d_rm"]
-  total_cells: 8974
-  cells_per_timepoint: null
+  total_cells: 31409
+  cells_per_timepoint: 4487
   min_cells_required: 1000
   balance_strategy: "total"
 
@@ -151,8 +151,8 @@ setting4_ablation_remove_8h_rm:
   name: "E2M2E-Setting4-Ablation: Remove 8h_rm"
   description: "Ablation study: remove 8h_rm (early reversal) to assess its marginal contribution"
   time_points: ["0d", "8h", "1d", "3d", "7d", "1d_rm", "3d_rm"]
-  total_cells: 8974
-  cells_per_timepoint: null
+  total_cells: 31409
+  cells_per_timepoint: 4487
   min_cells_required: 1000
   balance_strategy: "total"
 
@@ -161,8 +161,8 @@ setting4_ablation_remove_1d_rm:
   name: "E2M2E-Setting4-Ablation: Remove 1d_rm"
   description: "Ablation study: remove 1d_rm to assess its marginal contribution"
   time_points: ["0d", "8h", "1d", "3d", "7d", "8h_rm", "3d_rm"]
-  total_cells: 8974
-  cells_per_timepoint: null
+  total_cells: 31409
+  cells_per_timepoint: 4487
   min_cells_required: 1000
   balance_strategy: "total"
 
@@ -183,8 +183,8 @@ setting5_label_shuffled:
   intermediate_timepoints: ["8h", "1d", "3d", "7d", "8h_rm", "1d_rm"]
   
   # Total cells
-  total_cells: 8974
-  cells_per_timepoint: null
+  total_cells: 35896
+  cells_per_timepoint: 4487
   
   # Validation
   min_cells_required: 1000
@@ -208,8 +208,8 @@ setting6_interpolated:
   time_points: ["0d", "8h", "1d", "3d", "7d", "8h_rm", "1d_rm", "3d_rm"]
   
   # Total cells
-  total_cells: 6000  # 8 timepoints × 750 = 6,000 cells
-  cells_per_timepoint: null
+  total_cells: 35896
+  cells_per_timepoint: 4487
   
   # Validation
   min_cells_required: 750

@@ -1,0 +1,166 @@
+# ============================================================================
+# Experiment Configuration: GSE234181 - Setting 5 (Label Shuffled)
+# ============================================================================
+# Label shuffling experiment: Shuffle labels among intermediate timepoints
+# Boundary timepoints (T0, T3) keep their original labels
+# Intermediate timepoints (T1, T2) have shuffled labels
+#
+# Purpose: Test whether models rely on absolute time labels or can learn
+#          dynamics from data geometry even when labels are randomized
+
+experiment:
+  name: "GSE234181_Setting5_LabelShuffled"
+  description: "Label-shuffled experiment - randomize time labels on intermediate timepoints (T1, T2)"
+  version: "1.0"
+  author: "Shi Pan"
+  date: "2024-11-27"
+  experiment_type: "label_shuffled"
+
+configs:
+  data: "data_GSE234181.yaml"
+  models: "models_default.yaml"
+  analyzer: "analyzer_default.yaml"
+
+data_setting: "setting5_label_shuffled"
+
+data_sampling_override:
+  total_cells: 4000
+  
+  # Boundary timepoints (labels NOT shuffled)
+  # These are used as start/end for evaluation and excluded from label shuffling
+  boundary_timepoints: ["T0", "T3"]
+  start_timepoint: "T0"
+  end_timepoint: "T3"
+  
+  # Intermediate timepoints (labels TO BE shuffled)
+  intermediate_timepoints: ["T1", "T2"]
+  
+  # Shuffling parameters
+  shuffle_seed: 42
+
+models_to_train:
+  - name: "sb_mlplus"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
+        early_stopping_patience: 30
+  
+  - name: "batch_ot"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
+  
+  - name: "vae"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
+
+settings:
+  seed: 42
+  device: "cuda"
+  multi_gpu:
+    enabled: false
+  num_workers: 4
+  mixed_precision:
+    enabled: false
+  
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/GSE234181/Setting5_LabelShuffled"
+  
+  subdirs:
+    checkpoints: "checkpoints"
+    logs: "logs"
+    visualizations: "visualizations"
+    metrics: "metrics"
+    generated_data: "generated_data"
+  
+  logging:
+    console_level: "INFO"
+    file_level: "DEBUG"
+    log_file: "experiment.log"
+    wandb:
+      enabled: false
+    tensorboard:
+      enabled: true
+      log_dir: "tensorboard"
+  
+  checkpoint:
+    save_frequency: 10
+    keep_last_n: 3
+    save_best: true
+    save_optimizer: true
+    save_scheduler: true
+
+evaluation:
+  eval_during_training: true
+  eval_frequency: 5
+  eval_on_test: true
+  compute_metrics: true
+  generate_visualizations: true
+  save_generated_samples: true
+  n_samples_per_model: 1000
+  
+  # Evaluation endpoints (use true labels)
+  start_timepoint: "T0"
+  end_timepoint: "T3"
+  
+  trajectory:
+    n_intermediate_points: 20
+    save_full_trajectory: true
+    analyze_per_segment: true
+
+post_analysis:
+  enabled: true
+  tasks:
+    - name: "label_shuffle_analysis"
+      description: "Analyze impact of label shuffling on model performance"
+      enabled: true
+      params:
+        reference_setting: "GSE234181_Setting2"
+        metrics_to_compare:
+          - "test_loss"
+          - "frechet_distance"
+          - "mae"
+          - "pcc"
+          - "wasserstein_distance"
+          - "mmd"
+    - name: "label_confusion_analysis"
+      description: "Analyze label confusion matrix"
+      enabled: true
+      params:
+        visualize_confusion: true
+    - name: "generate_report"
+      description: "Generate comprehensive comparison report"
+      enabled: true
+
+resources:
+  max_memory_gb: 32
+  max_time_hours: 48
+
+error_handling:
+  continue_on_error: false
+  save_on_error: true
+  send_notification: false
+  notification_email: null
+
+notes: |
+  Experiment 5: Time Label Randomization for GSE234181
+  
+  Research Question:
+    Does the model rely on absolute time labels, or can it learn dynamics
+    from data geometry even when time labels are randomized?
+  
+  Design:
+    1. Keep boundary timepoints (T0, T3) with original labels
+    2. Shuffle labels among intermediate timepoints (T1, T2)
+    3. Train models as in Setting 2
+    4. Evaluate on true labels (T0 → T3)
+  
+  Interpretation:
+    - Performance drop: Model depends on absolute time labels
+    - Performance maintains: Model learns from data geometry

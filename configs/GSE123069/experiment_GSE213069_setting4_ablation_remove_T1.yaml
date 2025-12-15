@@ -1,47 +1,35 @@
 # ============================================================================
-# Experiment Configuration: EMT E2M2E - Setting 1 (Boundary Only)
+# Experiment Configuration: GSE234181 - Ablation Study (Remove T1)
 # ============================================================================
-# Boundary time points only: 0d (start) and 3d_rm (reversal endpoint)
+# Ablation: Remove T1 timepoint to assess its marginal contribution
 
 experiment:
-  name: "EMT_E2M2E_Setting1_Boundary"
-  description: "Train models on boundary time points (0d, 3d_rm) only"
+  name: "GSE234181_Setting4_Ablation_RemoveT1"
+  description: "Ablation study: remove T1 timepoint to assess its marginal contribution"
   version: "1.0"
   author: "Shi Pan"
   date: "2024-11-27"
+  parent_experiment: "GSE234181_Setting2"
+  ablation_target: "T1"
 
 configs:
-  data: "data_EMT_E2M2E.yaml"
+  data: "data_GSE234181.yaml"
   models: "models_default.yaml"
   analyzer: "analyzer_default.yaml"
 
-data_setting: "setting1"
+data_setting: "setting4_ablation_remove_T1"
 
 data_sampling_override:
-  cells_per_timepoint: 4487
-  # Setting1: 2 timepoints × 4,487 = 8,974 total samples
+  total_cells: 4000
 
 models_to_train:
-  - name: "sb"
+  - name: "sb_mlplus"
     enabled: true
     override_params:
       training:
         epochs: 200
         batch_size: 64
-  
-  - name: "ot"
-    enabled: true
-    override_params:
-      training:
-        epochs: 200
-        batch_size: 64
-  
-  - name: "vae"
-    enabled: true
-    override_params:
-      training:
-        epochs: 200
-        batch_size: 64
+        early_stopping_patience: 30
 
 settings:
   seed: 42
@@ -52,7 +40,7 @@ settings:
   mixed_precision:
     enabled: false
   
-  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/EMT_E2M2E/Setting1_Boundary"
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/GSE234181/Setting4_Ablation_RemoveT1"
   
   subdirs:
     checkpoints: "checkpoints"
@@ -87,25 +75,22 @@ evaluation:
   save_generated_samples: true
   n_samples_per_model: 1000
   
-  # Evaluation endpoints
-  start_timepoint: "0d"
-  end_timepoint: "3d_rm"
+  start_timepoint: "T0"
+  end_timepoint: "T3"
   
-  interpolation:
-    n_intermediate_points: 50
-    save_trajectory: true
+  trajectory:
+    n_intermediate_points: 20
+    save_full_trajectory: true
+    analyze_per_segment: true
 
 post_analysis:
   enabled: true
   tasks:
-    - name: "model_comparison"
-      description: "Compare all trained models"
-      enabled: true
-    - name: "trajectory_analysis"
-      description: "Analyze generated trajectories"
+    - name: "ablation_impact_analysis"
+      description: "Analyze the impact of removing T1 timepoint"
       enabled: true
     - name: "generate_report"
-      description: "Generate comprehensive HTML report"
+      description: "Generate ablation study report"
       enabled: true
 
 resources:

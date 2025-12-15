@@ -43,6 +43,7 @@ from Analyser import (
     EmbeddingComputer,
     TIMEPOINT_COLORS,
 )
+from Analyser.value_checker import ValueChecker
 from Data import (
     create_data_loader_from_config,
     get_data_for_setting
@@ -150,6 +151,18 @@ def compute_phate_embeddings(
     combined_data = np.vstack(all_data)
     logger.info(f"Combined data shape: {combined_data.shape}")
     
+    # Check for NaN values and handle them
+    nan_count = np.isnan(combined_data).sum()
+    if nan_count > 0:
+        logger.warning(f"Found {nan_count} NaN values in combined data, replacing with 0")
+        combined_data = np.nan_to_num(combined_data, nan=0.0)
+    
+    # Check for infinite values
+    inf_count = np.isinf(combined_data).sum()
+    if inf_count > 0:
+        logger.warning(f"Found {inf_count} infinite values in combined data, clipping")
+        combined_data = np.clip(combined_data, -1e10, 1e10)
+    
     # Compute PHATE
     logger.info("Computing PHATE embeddings...")
     embedding_computer = EmbeddingComputer(random_seed=42)
@@ -185,16 +198,16 @@ def plot_phate_4row_grid(
     start_timepoint: str,
     end_timepoint: str,
     output_path: Path,
-    figsize: Tuple[int, int] = (15, 20),
+    figsize: Tuple[int, int] = None,
     dpi: int = 300
 ) -> Path:
     """
-    Create a 4x3 PHATE embedding grid with Setting1, Setting2, and Setting3.
+    Create a dynamic PHATE embedding grid with Setting1, Setting2, and Setting3.
     
     Row 1: Real data views (all categories, start/end highlighted, intermediate highlighted)
-    Row 2: Setting1 models (OT, VAE, SB) - boundary only
-    Row 3: Setting2 models (Batch_OT, VAE, SB_MLPlus) - full trajectory
-    Row 4: Setting3 models - key timepoints
+    Row 2: Setting1 models - dynamically determined from available models
+    Row 3: Setting2 models - dynamically determined from available models
+    Row 4: Setting3 models - dynamically determined from available models
     
     Args:
         real_coords: PHATE coordinates for real data
@@ -206,13 +219,22 @@ def plot_phate_4row_grid(
         start_timepoint: Start timepoint label (e.g., '0d')
         end_timepoint: End timepoint label (e.g., '7d')
         output_path: Path to save the figure
-        figsize: Figure size
+        figsize: Figure size (auto-calculated if None)
         dpi: DPI for saving
     
     Returns:
         Path to saved figure
     """
-    fig, axes = plt.subplots(4, 3, figsize=figsize)
+    # Determine number of columns dynamically
+    n_cols = max(3,  # At least 3 for real data row
+                 len(generated_coords_s1) if generated_coords_s1 else 0,
+                 len(generated_coords_s2) if generated_coords_s2 else 0,
+                 len(generated_coords_s3) if generated_coords_s3 else 0)
+    
+    if figsize is None:
+        figsize = (5 * n_cols, 20)
+    
+    fig, axes = plt.subplots(4, n_cols, figsize=figsize)
     
     # Convert integer labels to string labels
     unique_int_labels = sorted(set(real_labels))
@@ -277,7 +299,7 @@ def plot_phate_4row_grid(
     # =========================================================================
     # Row 2: Setting1 models
     # =========================================================================
-    setting1_models = ['ot', 'vae', 'sb']
+    setting1_models = list(generated_coords_s1.keys()) if generated_coords_s1 else []
     for col_idx, model_name in enumerate(setting1_models):
         ax = axes[1, col_idx]
         
@@ -301,7 +323,7 @@ def plot_phate_4row_grid(
     # =========================================================================
     # Row 3: Setting2 models
     # =========================================================================
-    setting2_models = ['batch_ot', 'vae', 'sb_mlplus']
+    setting2_models = list(generated_coords_s2.keys()) if generated_coords_s2 else []
     for col_idx, model_name in enumerate(setting2_models):
         ax = axes[2, col_idx]
         
@@ -325,7 +347,7 @@ def plot_phate_4row_grid(
     # =========================================================================
     # Row 4: Setting3 models
     # =========================================================================
-    setting3_models = ['batch_ot', 'vae', 'sb_mlplus']
+    setting3_models = list(generated_coords_s3.keys()) if generated_coords_s3 else []
     for col_idx, model_name in enumerate(setting3_models):
         ax = axes[3, col_idx]
         
@@ -345,6 +367,16 @@ def plot_phate_4row_grid(
         ax.set_xlabel('PHATE 1', fontsize=10)
         ax.set_ylabel('PHATE 2', fontsize=10)
         ax.grid(alpha=0.3)
+    
+    # Hide unused subplots in each row
+    for col_idx in range(3, n_cols):
+        axes[0, col_idx].axis('off')  # Row 1: Real data (only 3 columns used)
+    for col_idx in range(len(setting1_models), n_cols):
+        axes[1, col_idx].axis('off')  # Row 2: Setting1
+    for col_idx in range(len(setting2_models), n_cols):
+        axes[2, col_idx].axis('off')  # Row 3: Setting2
+    for col_idx in range(len(setting3_models), n_cols):
+        axes[3, col_idx].axis('off')  # Row 4: Setting3
     
     plt.suptitle('Generation Quality Visualization (PHATE)\nSetting1 vs Setting2 vs Setting3', 
                 fontsize=14, fontweight='bold', y=1.01)
@@ -421,32 +453,68 @@ def run_fig1_set3_phate_visualization(
     # =========================================================================
     logger.info("\n--- Loading Generated Data ---")
     
-    # Setting1 models
+    # Initialize value checker
+    value_checker = ValueChecker(nan_threshold=0.1, logger=logger)
+    
+    # Load evaluation results for validation
+    eval_results_s1 = ValueChecker.load_evaluation_results(setting1_path / 'evaluation_results.json')
+    eval_results_s2 = ValueChecker.load_evaluation_results(setting2_path / 'evaluation_results.json')
+    eval_results_s3 = ValueChecker.load_evaluation_results(setting3_path / 'evaluation_results.json')
+    
+    # Setting1 models - dynamically load all available models
     gen_data_s1 = {}
-    for model_name in ['ot', 'vae', 'sb']:
+    available_models_s1 = list(eval_results_s1.keys()) if eval_results_s1 else []
+    logger.info(f"Available models in Setting1: {available_models_s1}")
+    for model_name in available_models_s1:
         gen_pkl = load_generated_data(setting1_path, model_name)
         if gen_pkl is not None and 'generated_data' in gen_pkl:
             gen_data_s1[model_name] = gen_pkl['generated_data']
             logger.info(f"  Setting1/{model_name}: {len(gen_pkl['generated_data'])} samples")
     
-    # Setting2 models
+    # Validate Setting1 models (filter out NaN models)
+    gen_data_s1, skipped_s1 = value_checker.filter_valid_models(gen_data_s1, eval_results_s1)
+    if skipped_s1:
+        logger.warning(f"Skipped Setting1 models due to invalid data: {skipped_s1}")
+    logger.info(f"Valid Setting1 models after filtering: {list(gen_data_s1.keys())}")
+    
+    # Setting2 models - dynamically load all available models
     gen_data_s2 = {}
-    for model_name in ['batch_ot', 'vae', 'sb_mlplus']:
+    available_models_s2 = list(eval_results_s2.keys()) if eval_results_s2 else []
+    logger.info(f"Available models in Setting2: {available_models_s2}")
+    for model_name in available_models_s2:
         gen_pkl = load_generated_data(setting2_path, model_name)
         if gen_pkl is not None and 'generated_data' in gen_pkl:
             gen_data_s2[model_name] = gen_pkl['generated_data']
             logger.info(f"  Setting2/{model_name}: {len(gen_pkl['generated_data'])} samples")
     
-    # Setting3 models
+    # Validate Setting2 models (filter out NaN models)
+    gen_data_s2, skipped_s2 = value_checker.filter_valid_models(gen_data_s2, eval_results_s2)
+    if skipped_s2:
+        logger.warning(f"Skipped Setting2 models due to invalid data: {skipped_s2}")
+    logger.info(f"Valid Setting2 models after filtering: {list(gen_data_s2.keys())}")
+    
+    # Setting3 models - dynamically load all available models
     gen_data_s3 = {}
-    for model_name in ['batch_ot', 'vae', 'sb_mlplus']:
+    available_models_s3 = list(eval_results_s3.keys()) if eval_results_s3 else []
+    logger.info(f"Available models in Setting3: {available_models_s3}")
+    for model_name in available_models_s3:
         gen_pkl = load_generated_data(setting3_path, model_name)
         if gen_pkl is not None and 'generated_data' in gen_pkl:
             gen_data_s3[model_name] = gen_pkl['generated_data']
             logger.info(f"  Setting3/{model_name}: {len(gen_pkl['generated_data'])} samples")
     
+    # Validate Setting3 models (filter out NaN models)
+    gen_data_s3, skipped_s3 = value_checker.filter_valid_models(gen_data_s3, eval_results_s3)
+    if skipped_s3:
+        logger.warning(f"Skipped Setting3 models due to invalid data: {skipped_s3}")
+    logger.info(f"Valid Setting3 models after filtering: {list(gen_data_s3.keys())}")
+    
     if not gen_data_s1 and not gen_data_s2 and not gen_data_s3:
-        raise ValueError("No generated data found in any setting")
+        logger.error("No valid generated data found in any setting after filtering")
+        return {
+            'fig_path': None,
+            'skipped_models': {'Setting1': skipped_s1, 'Setting2': skipped_s2, 'Setting3': skipped_s3}
+        }
     
     # =========================================================================
     # Combine all generated data for joint PHATE embedding

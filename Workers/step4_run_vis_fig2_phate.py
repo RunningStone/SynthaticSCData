@@ -43,6 +43,7 @@ from Analyser import (
     EmbeddingComputer,
     TIMEPOINT_COLORS,
 )
+from Analyser.value_checker import ValueChecker
 from Data import (
     create_data_loader_from_config,
     get_data_for_setting
@@ -170,6 +171,18 @@ def compute_phate_embeddings(
     
     combined_data = np.vstack(all_data)
     logger.info(f"Combined data shape: {combined_data.shape}")
+    
+    # Check for NaN values and handle them
+    nan_count = np.isnan(combined_data).sum()
+    if nan_count > 0:
+        logger.warning(f"Found {nan_count} NaN values in combined data, replacing with 0")
+        combined_data = np.nan_to_num(combined_data, nan=0.0)
+    
+    # Check for infinite values
+    inf_count = np.isinf(combined_data).sum()
+    if inf_count > 0:
+        logger.warning(f"Found {inf_count} infinite values in combined data, clipping")
+        combined_data = np.clip(combined_data, -1e10, 1e10)
     
     # Compute PHATE
     logger.info("Computing PHATE embeddings...")
@@ -420,26 +433,64 @@ def run_fig2_phate_visualization(
     # =========================================================================
     logger.info("\n--- Loading Generated Data ---")
     
+    # Initialize value checker
+    value_checker = ValueChecker(nan_threshold=0.1, logger=logger)
+    
+    # Load evaluation results for validation
+    eval_results_s2 = ValueChecker.load_evaluation_results(setting2_path / 'evaluation_results.json')
+    
     # Setting2 generated data
     gen_data_s2 = load_generated_data(setting2_path, model_name)
     if gen_data_s2 is None:
         raise FileNotFoundError(f"No generated data found for {model_name} in Setting2")
     
-    logger.info(f"Setting2/{model_name}: {len(gen_data_s2.get('generated_data', []))} samples")
+    # Validate Setting2 model
+    s2_gen_data = gen_data_s2.get('generated_data')
+    s2_eval = eval_results_s2.get(model_name) if eval_results_s2 else None
+    is_valid, reason = value_checker.check_model(s2_gen_data, s2_eval, f"Setting2/{model_name}")
+    if not is_valid:
+        logger.error(f"Setting2/{model_name} has invalid data: {reason}")
+        return {
+            'fig2_phate': None,
+            'error': f"Setting2/{model_name} invalid: {reason}"
+        }
+    
+    logger.info(f"Setting2/{model_name}: {len(s2_gen_data)} samples ✓")
     
     # Discover and load Setting4 ablation variants
     ablation_paths = discover_ablation_settings(setting4_path)
     logger.info(f"Found ablation variants: {list(ablation_paths.keys())}")
     
     gen_data_ablations = {}
+    skipped_ablations = []
     for tp, abl_path in ablation_paths.items():
         gen_pkl = load_generated_data(abl_path, model_name)
         if gen_pkl is not None and 'generated_data' in gen_pkl:
-            gen_data_ablations[tp] = gen_pkl['generated_data']
-            logger.info(f"  Setting4_Remove{tp}: {len(gen_pkl['generated_data'])} samples")
+            gen_data = gen_pkl['generated_data']
+            
+            # Load and check evaluation results for this ablation
+            abl_eval_results = ValueChecker.load_evaluation_results(abl_path / 'evaluation_results.json')
+            abl_eval = abl_eval_results.get(model_name) if abl_eval_results else None
+            
+            is_valid, reason = value_checker.check_model(gen_data, abl_eval, f"Setting4_Remove{tp}/{model_name}")
+            if not is_valid:
+                logger.warning(f"Skipping Setting4_Remove{tp}: {reason}")
+                skipped_ablations.append(tp)
+                continue
+            
+            gen_data_ablations[tp] = gen_data
+            logger.info(f"  Setting4_Remove{tp}: {len(gen_data)} samples ✓")
+    
+    if skipped_ablations:
+        logger.warning(f"Skipped ablations due to invalid data: {skipped_ablations}")
     
     if not gen_data_ablations:
-        raise ValueError("No ablation generated data found in Setting4")
+        logger.error("No valid ablation generated data found in Setting4")
+        return {
+            'fig2_phate': None,
+            'error': "No valid ablation data",
+            'skipped_ablations': skipped_ablations
+        }
     
     # =========================================================================
     # Prepare data for PHATE

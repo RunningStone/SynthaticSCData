@@ -1,0 +1,168 @@
+# ============================================================================
+# Experiment Configuration: GSE234181 - Setting 6 (Interpolated)
+# ============================================================================
+# Interpolation experiment: Generate intermediate timepoints via linear interpolation
+# Boundary timepoints (T0, T3) use real data
+# Intermediate timepoints (T1, T2) are linearly interpolated
+#
+# Purpose: Test whether geometric interpolation can replace real observations
+
+experiment:
+  name: "GSE234181_Setting6_Interpolated"
+  description: "Train models on boundary (real) + interpolated intermediate time points"
+  version: "1.0"
+  author: "Shi Pan"
+  date: "2024-11-27"
+  experiment_type: "interpolated"
+
+configs:
+  data: "data_GSE234181.yaml"
+  models: "models_default.yaml"
+  analyzer: "analyzer_default.yaml"
+
+data_setting: "setting6_interpolated"
+
+data_sampling_override:
+  total_cells: 3000  # 4 timepoints × 750 = 3,000 cells
+
+models_to_train:
+  - name: "sb_mlplus"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
+        early_stopping_patience: 30
+  
+  - name: "batch_ot"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 128
+  
+  - name: "vae"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 128
+  
+  - name: "ot"
+    enabled: true
+    override_params:
+      training:
+        epochs: 150
+        batch_size: 128
+  
+  - name: "sb"
+    enabled: true
+    override_params:
+      training:
+        epochs: 150
+        batch_size: 64
+
+settings:
+  seed: 42
+  device: "cuda"
+  multi_gpu:
+    enabled: false
+  num_workers: 4
+  mixed_precision:
+    enabled: false
+  
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/GSE234181/Setting6_Interpolated"
+  
+  subdirs:
+    checkpoints: "checkpoints"
+    logs: "logs"
+    visualizations: "visualizations"
+    metrics: "metrics"
+    generated_data: "generated_data"
+    interpolated_data: "interpolated_data"
+  
+  logging:
+    console_level: "INFO"
+    file_level: "DEBUG"
+    log_file: "experiment.log"
+    wandb:
+      enabled: false
+    tensorboard:
+      enabled: true
+      log_dir: "tensorboard"
+  
+  checkpoint:
+    save_frequency: 10
+    keep_last_n: 3
+    save_best: true
+    save_optimizer: true
+    save_scheduler: true
+
+evaluation:
+  eval_during_training: true
+  eval_frequency: 5
+  eval_on_test: true
+  compute_metrics: true
+  generate_visualizations: true
+  save_generated_samples: true
+  n_samples_per_model: 1000
+  
+  # Evaluation endpoints
+  start_timepoint: "T0"
+  end_timepoint: "T3"
+  
+  # Interpolation-specific evaluation
+  interpolation_analysis:
+    enabled: true
+    compute_iei: true  # Interpolation Effectiveness Index
+    compute_rsi: true  # Residual Structure Index
+    per_timepoint_analysis: true
+    compare_with_setting1: true
+    compare_with_setting2: true
+
+post_analysis:
+  enabled: true
+  tasks:
+    - name: "interpolation_quality_analysis"
+      description: "Analyze quality of interpolated training data"
+      enabled: true
+    - name: "comparison_with_real_intermediate"
+      description: "Compare generated data with real intermediate states"
+      enabled: true
+    - name: "residual_structure_analysis"
+      description: "Analyze structure in interpolation residuals"
+      enabled: true
+    - name: "generate_report"
+      description: "Generate comprehensive HTML report"
+      enabled: true
+
+resources:
+  max_memory_gb: 32
+  max_time_hours: 48
+
+error_handling:
+  continue_on_error: false
+  save_on_error: true
+  send_notification: false
+  notification_email: null
+
+# Experiment 6 specific parameters
+experiment6_params:
+  # Interpolation parameters
+  boundary_timepoints: ["T0", "T3"]
+  intermediate_timepoints: ["T1", "T2"]
+  n_samples_per_timepoint: 750
+  
+  # Time mapping (for interpolation weights)
+  time_to_hours:
+    "T0": 0.0
+    "T1": 24.0
+    "T2": 48.0
+    "T3": 72.0
+  
+  # Analysis parameters
+  rsi_n_components: 10
+  
+  # Comparison settings
+  setting1_results_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/GSE234181/Setting1_Boundary"
+  setting2_results_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/GSE234181/Setting2_FullTrajectory"

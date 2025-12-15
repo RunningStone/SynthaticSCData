@@ -1,35 +1,36 @@
 # ============================================================================
-# Experiment Configuration: EMT E2M2E - Setting 1 (Boundary Only)
+# Experiment Configuration: GSE213069 V1 - Setting 2 (Full Trajectory)
 # ============================================================================
-# Boundary time points only: 0d (start) and 3d_rm (reversal endpoint)
+# All 5 time points: T0 → day2 → day3 → day4 → day5
 
 experiment:
-  name: "EMT_E2M2E_Setting1_Boundary"
-  description: "Train models on boundary time points (0d, 3d_rm) only"
+  name: "GSE213069_V1_Setting2_FullTrajectory"
+  description: "Train models on all 5 time points (full trajectory)"
   version: "1.0"
   author: "Shi Pan"
-  date: "2024-11-27"
+  date: "2024-12-15"
 
 configs:
-  data: "data_EMT_E2M2E.yaml"
+  data: "data_GSE213069_V1.yaml"
   models: "models_default.yaml"
   analyzer: "analyzer_default.yaml"
 
-data_setting: "setting1"
+data_setting: "setting2"
 
 data_sampling_override:
-  cells_per_timepoint: 4487
-  # Setting1: 2 timepoints × 4,487 = 8,974 total samples
+  total_cells: 2500
+  # Setting2: 5 timepoints, ~500 cells per timepoint
 
 models_to_train:
-  - name: "sb"
+  - name: "sb_mlplus"
     enabled: true
     override_params:
       training:
         epochs: 200
         batch_size: 64
+        early_stopping_patience: 30
   
-  - name: "ot"
+  - name: "batch_ot"
     enabled: true
     override_params:
       training:
@@ -52,7 +53,7 @@ settings:
   mixed_precision:
     enabled: false
   
-  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/EMT_E2M2E/Setting1_Boundary"
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/GSE213069_V1/Setting2_FullTrajectory"
   
   subdirs:
     checkpoints: "checkpoints"
@@ -88,12 +89,13 @@ evaluation:
   n_samples_per_model: 1000
   
   # Evaluation endpoints
-  start_timepoint: "0d"
-  end_timepoint: "3d_rm"
+  start_timepoint: "T0"
+  end_timepoint: "day5"
   
-  interpolation:
-    n_intermediate_points: 50
-    save_trajectory: true
+  trajectory:
+    n_intermediate_points: 20
+    save_full_trajectory: true
+    analyze_per_segment: true
 
 post_analysis:
   enabled: true
@@ -110,7 +112,7 @@ post_analysis:
 
 resources:
   max_memory_gb: 32
-  max_time_hours: 24
+  max_time_hours: 48
 
 error_handling:
   continue_on_error: false

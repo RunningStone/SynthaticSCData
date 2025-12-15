@@ -33,6 +33,72 @@ class Evaluator:
         self.start_timepoint = start_timepoint
         self.end_timepoint = end_timepoint
     
+    def _generate_endpoint(
+        self,
+        model: torch.nn.Module,
+        x_start: torch.Tensor,
+        t_start: int,
+        t_end: int,
+        n_total_timepoints: int,
+        model_name: str
+    ) -> torch.Tensor:
+        """
+        Generate endpoint based on model type with correct time semantics.
+        
+        Different models have different time semantics:
+        - SB/SB_MLPlus: Continuous process, time normalized to [0, 1] during training
+          Training uses t = t_idx / n_timepoints, dt = 1 / n_timepoints
+          Evaluation should use same mapping for consistency
+        - Batch OT: Discrete transitions, applies OT models sequentially
+          No continuous time_grid needed, just sequential application
+        - Conditional VAE: Discrete conditioning on time index
+          Uses integer time indices directly
+        - OT: Direct mapping, no time concept
+        
+        Args:
+            model: The model to use
+            x_start: Starting points (batch_size, d)
+            t_start: Start time index (integer)
+            t_end: End time index (integer)
+            n_total_timepoints: Total number of timepoints in the dataset
+            model_name: Model type string
+            
+        Returns:
+            x_end: Generated endpoints (batch_size, d)
+        """
+        if model_name in ['sb', 'sb_mlplus']:
+            # SB models: use continuous time matching training semantics
+            # Training: t = t_idx / n_timepoints, so we use same mapping
+            # Use enough steps for accurate ODE integration
+            n_steps = max(20, (t_end - t_start) * 5)  # At least 5 steps per time interval
+            time_grid = torch.linspace(
+                float(t_start) / n_total_timepoints,
+                float(t_end) / n_total_timepoints,
+                steps=n_steps,
+                device=self.device
+            )
+            trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic', create_graph=False)
+            return trajectory[:, -1, :]
+            
+        elif model_name == 'batch_ot':
+            # Batch OT: discrete transitions, use forward() directly
+            # forward(x, t_source, t_target) applies OT models sequentially
+            return model.forward(x_start, t_start, t_end)
+            
+        elif model_name == 'vae':
+            # Conditional VAE: discrete conditioning
+            # Only need start and end, interpolation is in latent space
+            time_grid = torch.linspace(0.0, 1.0, steps=2, device=self.device)
+            trajectory = model.generate_trajectory(x_start, time_grid, t_start, t_end, method='deterministic')
+            return trajectory[:, -1, :]
+            
+        else:
+            # OT: direct mapping, no time concept
+            # time_grid only affects interpolation, endpoint is always forward(x_start)
+            time_grid = torch.linspace(0.0, 1.0, steps=2, device=self.device)
+            trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
+            return trajectory[:, -1, :]
+    
     def evaluate(
         self,
         model: torch.nn.Module,
@@ -195,25 +261,10 @@ class Evaluator:
             x_start = X[indices_start]
             x_real_end = X[indices_end]
             
-            # Generate trajectory
-            time_grid = torch.linspace(
-                float(t_start) / len(sorted_times),
-                float(t_end) / len(sorted_times),
-                steps=10,
-                device=self.device
+            # Generate endpoint using model-specific logic
+            x_gen_end = self._generate_endpoint(
+                model, x_start, t_start, t_end, len(sorted_times), model_name
             )
-            
-            # Call generate_trajectory with appropriate parameters based on model type
-            if model_name == 'vae':
-                # ConditionalVAE needs time indices
-                trajectory = model.generate_trajectory(x_start, time_grid, int(t_start), int(t_end), method='deterministic')
-            elif model_name in ['sb', 'sb_mlplus']:
-                # SB models support create_graph parameter for memory efficiency
-                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic', create_graph=False)
-            else:
-                # OT and other models
-                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
-            x_gen_end = trajectory[:, -1, :]
             
             # Compute statistics (detach tensors before converting to numpy)
             mu_real = x_real_end.mean(dim=0).detach().cpu().numpy()
@@ -263,24 +314,10 @@ class Evaluator:
             x_start = X[indices_start]
             x_real_end = X[indices_end]
             
-            time_grid = torch.linspace(
-                float(t_start) / len(sorted_times),
-                float(t_end) / len(sorted_times),
-                steps=10,
-                device=self.device
+            # Generate endpoint using model-specific logic
+            x_gen_end = self._generate_endpoint(
+                model, x_start, t_start, t_end, len(sorted_times), model_name
             )
-            
-            # Call generate_trajectory with appropriate parameters based on model type
-            if model_name == 'vae':
-                # ConditionalVAE needs time indices
-                trajectory = model.generate_trajectory(x_start, time_grid, int(t_start), int(t_end), method='deterministic')
-            elif model_name in ['sb', 'sb_mlplus']:
-                # SB models support create_graph parameter for memory efficiency
-                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic', create_graph=False)
-            else:
-                # OT and other models
-                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
-            x_gen_end = trajectory[:, -1, :]
             
             # Match sizes
             n_samples = min(len(x_real_end), len(x_gen_end))
@@ -318,24 +355,10 @@ class Evaluator:
             x_start = X[indices_start]
             x_real_end = X[indices_end]
             
-            time_grid = torch.linspace(
-                float(t_start) / len(sorted_times),
-                float(t_end) / len(sorted_times),
-                steps=10,
-                device=self.device
+            # Generate endpoint using model-specific logic
+            x_gen_end = self._generate_endpoint(
+                model, x_start, t_start, t_end, len(sorted_times), model_name
             )
-            
-            # Call generate_trajectory with appropriate parameters based on model type
-            if model_name == 'vae':
-                # ConditionalVAE needs time indices
-                trajectory = model.generate_trajectory(x_start, time_grid, int(t_start), int(t_end), method='deterministic')
-            elif model_name in ['sb', 'sb_mlplus']:
-                # SB models support create_graph parameter for memory efficiency
-                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic', create_graph=False)
-            else:
-                # OT and other models
-                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
-            x_gen_end = trajectory[:, -1, :]
             
             # Match sizes
             n_samples = min(len(x_real_end), len(x_gen_end))
@@ -390,25 +413,10 @@ class Evaluator:
             x_start = X[indices_start]
             x_real_end = X[indices_end]
             
-            # Generate trajectory
-            time_grid = torch.linspace(
-                float(t_start) / len(sorted_times),
-                float(t_end) / len(sorted_times),
-                steps=10,
-                device=self.device
+            # Generate endpoint using model-specific logic
+            x_gen_end = self._generate_endpoint(
+                model, x_start, t_start, t_end, len(sorted_times), model_name
             )
-            
-            # Call generate_trajectory with appropriate parameters based on model type
-            if model_name == 'vae':
-                # ConditionalVAE needs time indices
-                trajectory = model.generate_trajectory(x_start, time_grid, int(t_start), int(t_end), method='deterministic')
-            elif model_name in ['sb', 'sb_mlplus']:
-                # SB models support create_graph parameter for memory efficiency
-                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic', create_graph=False)
-            else:
-                # OT and other models
-                trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
-            x_gen_end = trajectory[:, -1, :]
             
             # Match sizes
             n_samples = min(len(x_real_end), len(x_gen_end))
@@ -595,23 +603,10 @@ class Evaluator:
         indices_start = time_to_indices[t_start]
         x_start = all_X[indices_start]
         
-        # 生成轨迹
-        time_grid = torch.linspace(
-            float(t_start) / len(sorted_times),
-            float(t_end) / len(sorted_times),
-            steps=10,
-            device=self.device
+        # 生成终点，使用模型特定的逻辑
+        x_gen_end = self._generate_endpoint(
+            model, x_start, t_start, t_end, len(sorted_times), current_model_name
         )
-        
-        # 根据模型类型生成轨迹
-        if current_model_name == 'vae':
-            trajectory = model.generate_trajectory(x_start, time_grid, int(t_start), int(t_end), method='deterministic')
-        elif current_model_name in ['sb', 'sb_mlplus']:
-            trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic', create_graph=False)
-        else:
-            trajectory = model.generate_trajectory(x_start, time_grid, method='deterministic')
-        
-        x_gen_end = trajectory[:, -1, :]
         
         # 返回数据
         return {

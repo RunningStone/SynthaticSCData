@@ -33,6 +33,7 @@ from .entropy_analyzer import EntropyAnalyzer
 from .figure_plotters import (
     plot_performance_radar,
     plot_phate_3x3_grid,
+    plot_phate_dynamic_grid,
     plot_ablation_bar_chart,
     plot_ablation_heatmap,
     plot_entropy_marginal_scatter,
@@ -60,6 +61,7 @@ __all__ = [
     # Figure plotters
     "plot_performance_radar",
     "plot_phate_3x3_grid",
+    "plot_phate_dynamic_grid",
     "plot_ablation_bar_chart",
     "plot_ablation_heatmap",
     "plot_entropy_marginal_scatter",

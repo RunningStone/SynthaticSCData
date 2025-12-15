@@ -43,6 +43,7 @@ from Analyser import (
     extract_metrics_from_results,
     METRICS_CONFIG,
 )
+from Analyser.value_checker import ValueChecker
 
 
 def setup_logger(output_dir: Path) -> logging.Logger:
@@ -224,8 +225,24 @@ def run_fig2_visualization(
     # =========================================================================
     logger.info("\n--- Loading Evaluation Results ---")
     
+    # Initialize value checker
+    value_checker = ValueChecker(nan_threshold=0.1, logger=logger)
+    
     # Load Setting2 (full model) results
     results_s2 = load_evaluation_results(setting2_path)
+    
+    # Check if the target model has valid metrics
+    if model_name in results_s2:
+        is_valid, reason = value_checker.check_evaluation_results(results_s2[model_name], model_name)
+        if not is_valid:
+            logger.error(f"Model {model_name} has invalid evaluation results: {reason}")
+            return {
+                'fig2_1': None,
+                'fig2_2': None,
+                'fig2_3': None,
+                'error': f"Model {model_name} has invalid metrics: {reason}"
+            }
+    
     metrics_full = extract_metrics_from_results(results_s2, model_name)
     logger.info(f"Setting2 (full): {model_name} metrics loaded")
     
@@ -234,13 +251,33 @@ def run_fig2_visualization(
     logger.info(f"Found ablation variants: {list(ablation_paths.keys())}")
     
     metrics_ablations = {}
+    skipped_ablations = []
     for tp, abl_path in ablation_paths.items():
         results_abl = load_evaluation_results(abl_path)
+        
+        # Check if ablation model has valid metrics
+        if model_name in results_abl:
+            is_valid, reason = value_checker.check_evaluation_results(results_abl[model_name], f"{model_name}_Remove{tp}")
+            if not is_valid:
+                logger.warning(f"Skipping ablation Remove{tp}: {reason}")
+                skipped_ablations.append(tp)
+                continue
+        
         metrics_ablations[tp] = extract_metrics_from_results(results_abl, model_name)
         logger.info(f"  Remove {tp}: metrics loaded")
     
+    if skipped_ablations:
+        logger.warning(f"Skipped ablations due to invalid metrics: {skipped_ablations}")
+    
     if not metrics_ablations:
-        raise ValueError("No ablation results found in Setting4")
+        logger.error("No valid ablation results found in Setting4")
+        return {
+            'fig2_1': None,
+            'fig2_2': None,
+            'fig2_3': None,
+            'error': "No valid ablation results",
+            'skipped_ablations': skipped_ablations
+        }
     
     # Define metrics to plot
     metrics_keys = list(METRICS_CONFIG.keys())

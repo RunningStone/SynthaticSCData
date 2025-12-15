@@ -23,7 +23,7 @@ data_source:
     "T2-T3": 24  # Awakening phase, adjust as needed
   
   # Feature selection
-  n_hvg: 100  # Number of highly variable genes to select
+  n_hvg: 1000  # Number of highly variable genes to select
 
 # Biology-based train/test split
 # Split based on settings column values
@@ -69,7 +69,7 @@ setting1:
   time_points: ["T0", "T3"]
   
   # Number of cells per time point
-  cells_per_timepoint: 2000
+  cells_per_timepoint: 11696
   
   # Validation
   min_cells_required: 1000
@@ -88,8 +88,8 @@ setting2:
   time_points: ["T0", "T1", "T2", "T3"]
   
   # Total cells
-  total_cells: 4000
-  cells_per_timepoint: null
+  total_cells: 23392
+  cells_per_timepoint: 5848
   
   # Validation
   min_cells_required: 500
@@ -108,8 +108,8 @@ setting3:
   time_points: ["T0", "T1", "T3"]
   
   # Total cells
-  total_cells: 4000
-  cells_per_timepoint: null
+  total_cells: 23391
+  cells_per_timepoint: 7797
   
   # Validation
   min_cells_required: 500
@@ -128,8 +128,8 @@ setting4_ablation_remove_T1:
   name: "GSE234181-Setting4-Ablation: Remove T1"
   description: "Ablation study: remove T1 to assess its marginal contribution"
   time_points: ["T0", "T2", "T3"]
-  total_cells: 4000
-  cells_per_timepoint: null
+  total_cells: 35088
+  cells_per_timepoint: 11696
   min_cells_required: 500
   balance_strategy: "total"
 
@@ -138,8 +138,8 @@ setting4_ablation_remove_T2:
   name: "GSE234181-Setting4-Ablation: Remove T2"
   description: "Ablation study: remove T2 to assess its marginal contribution"
   time_points: ["T0", "T1", "T3"]
-  total_cells: 4000
-  cells_per_timepoint: null
+  total_cells: 35088
+  cells_per_timepoint: 11696
   min_cells_required: 500
   balance_strategy: "total"
 
@@ -160,8 +160,8 @@ setting5_label_shuffled:
   intermediate_timepoints: ["T1", "T2"]
   
   # Total cells
-  total_cells: 4000
-  cells_per_timepoint: null
+  total_cells: 46784
+  cells_per_timepoint: 11696
   
   # Validation
   min_cells_required: 500
@@ -185,8 +185,8 @@ setting6_interpolated:
   time_points: ["T0", "T1", "T2", "T3"]
   
   # Total cells
-  total_cells: 3000  # 4 timepoints × 750 = 3,000 cells
-  cells_per_timepoint: null
+  total_cells: 46784
+  cells_per_timepoint: 11696
   
   # Validation
   min_cells_required: 750

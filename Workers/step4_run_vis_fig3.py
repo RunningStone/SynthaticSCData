@@ -41,6 +41,7 @@ from Analyser import (
     extract_metrics_from_results,
     METRICS_CONFIG,
 )
+from Analyser.value_checker import ValueChecker
 
 
 def setup_logger(output_dir: Path) -> logging.Logger:
@@ -133,17 +134,46 @@ def run_fig3_visualization(
     # =========================================================================
     logger.info("\n--- Loading Evaluation Results ---")
     
+    # Initialize value checker
+    value_checker = ValueChecker(nan_threshold=0.1, logger=logger)
+    
     results_s1 = load_evaluation_results(setting1_path)
     results_s2 = load_evaluation_results(setting2_path)
     results_s5 = load_evaluation_results(setting5_path)
     results_s6 = load_evaluation_results(setting6_path)
     
-    logger.info(f"Setting1 models: {list(results_s1.keys())}")
-    logger.info(f"Setting2 models: {list(results_s2.keys())}")
-    logger.info(f"Setting5 models: {list(results_s5.keys())}")
-    logger.info(f"Setting6 models: {list(results_s6.keys())}")
+    # Filter out models with invalid evaluation results
+    def filter_valid_results(results: Dict, setting_name: str) -> Dict:
+        """Filter out models with NaN metrics."""
+        valid_results = {}
+        for model_name, model_results in results.items():
+            is_valid, reason = value_checker.check_evaluation_results(model_results, f"{setting_name}/{model_name}")
+            if is_valid:
+                valid_results[model_name] = model_results
+            else:
+                logger.warning(f"Skipping {setting_name}/{model_name}: {reason}")
+        return valid_results
     
-    # Extract metrics for all models
+    results_s1 = filter_valid_results(results_s1, "Setting1")
+    results_s2 = filter_valid_results(results_s2, "Setting2")
+    results_s5 = filter_valid_results(results_s5, "Setting5")
+    results_s6 = filter_valid_results(results_s6, "Setting6")
+    
+    logger.info(f"Setting1 valid models: {list(results_s1.keys())}")
+    logger.info(f"Setting2 valid models: {list(results_s2.keys())}")
+    logger.info(f"Setting5 valid models: {list(results_s5.keys())}")
+    logger.info(f"Setting6 valid models: {list(results_s6.keys())}")
+    
+    # Check if we have enough valid models
+    if not results_s2:
+        logger.error("No valid models in Setting2, cannot proceed")
+        return {
+            'fig3_1': None,
+            'fig3_2': None,
+            'error': "No valid models in Setting2"
+        }
+    
+    # Extract metrics for all valid models
     metrics_s1 = {model: extract_metrics_from_results(results_s1, model) 
                   for model in results_s1.keys()}
     metrics_s2 = {model: extract_metrics_from_results(results_s2, model) 

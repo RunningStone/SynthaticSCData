@@ -1,0 +1,193 @@
+# ============================================================================
+# Data Configuration: GSE213069 Dataset - Version 1
+# ============================================================================
+# V1: non-targeting + ID1 + ETS2 (3 perturbation groups × 5 time points)
+#
+# 核心设计：
+# - 将 non-targeting day2 通过重采样同时扮演两个角色：
+#   1. 共享起点 T0：所有扰动组的初始状态
+#   2. 对照组 day2：non-targeting 自身轨迹的第二时间点
+# - 时间轴：T0 → day2 → day3 → day4 → day5
+
+# Raw data file information
+data_source:
+  file_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/DATAs/GSE213069/processed/GSE213069_V1_hvg1000.h5ad"
+  obs_time_column: "time_label"  # Column name in adata.obs for time labels
+  
+  # Time label order (cells with labels not in this list will be filtered out with warning)
+  time_labels_order: ["T0", "day2", "day3", "day4", "day5"]
+  
+  # Time intervals between consecutive time points (in hours)
+  # Based on experimental design: day2, day3, day4, day5 are consecutive days
+  time_intervals:
+    "T0-day2": 0      # T0 is sampled from day2, so interval is 0
+    "day2-day3": 24   # 1 day = 24 hours
+    "day3-day4": 24   # 1 day = 24 hours
+    "day4-day5": 24   # 1 day = 24 hours
+  
+  # Feature selection
+  n_hvg: 1000  # Number of highly variable genes to select
+
+# Perturbation groups included in this version
+perturbation_groups:
+  - "non-targeting"  # Control group
+  - "ID1"            # ID1 knockout
+  - "ETS2"           # ETS2 knockout
+
+# Biology-based train/test split
+# Split based on 'batch' column values (pre-assigned in split_data.py)
+# Each (timepoint × KO_gene) group is split 80%/20% into train/test
+biology_split:
+  column_name: "batch"  # Column in adata.obs for split
+  
+  # Train samples
+  train_values: ["train"]
+  
+  # Test samples
+  test_values: ["test"]
+  
+  train_ratio: 0.8  # Only used if column_name is null (random split)
+
+# Setting 1: Boundary time points only (first and last)
+setting1:
+  name: "Boundary Only"
+  description: "Use only the first and last time points for interpolation (T0 and day5)"
+  
+  # Time points to include (must be in time_labels_order)
+  time_points: ["T0", "day5"]
+  
+  # Number of cells per time point
+  cells_per_timepoint: 500
+  
+  # Validation: check if sufficient cells exist
+  min_cells_required: 200  # Error if any time point has fewer cells
+  
+  # Balance strategy
+  balance_strategy: "per_timepoint"  # Each time point has cells_per_timepoint samples
+
+# Setting 2: All time points
+setting2:
+  name: "All Time Points"
+  description: "Use all available time points for full trajectory learning (T0, day2, day3, day4, day5)"
+  
+  # Time points to include (must be in time_labels_order)
+  time_points: ["T0", "day2", "day3", "day4", "day5"]
+  
+  # Total cells or cells per time point
+  total_cells: 2500  # Total number of cells across all time points (500 per timepoint)
+  cells_per_timepoint: null  # If null, use total_cells; if set, use this instead
+  
+  # Validation
+  min_cells_required: 200  # Error if any time point has fewer cells
+  
+  # Balance strategy: "total" or "per_timepoint"
+  balance_strategy: "total"
+
+# Setting 3: Key time points (early + late)
+setting3:
+  name: "Key Time Points"
+  description: "Use key time points: start, early response, and end (T0, day2, day5)"
+  
+  time_points: ["T0", "day2", "day5"]
+  
+  total_cells: 1500
+  cells_per_timepoint: null
+  
+  min_cells_required: 200
+  balance_strategy: "total"
+
+# ============================================================================
+# Setting 4: Ablation Studies
+# ============================================================================
+
+# Ablation 1: Remove day2 timepoint
+setting4_ablation_remove_day2:
+  name: "Ablation: Remove day2"
+  description: "Ablation study: remove day2 to assess its marginal contribution"
+  
+  time_points: ["T0", "day3", "day4", "day5"]
+  
+  total_cells: 2500  # Same as Setting2 for fair comparison
+  cells_per_timepoint: null
+  
+  min_cells_required: 200
+  balance_strategy: "total"  # 2500 / 4 = 625 cells per timepoint
+
+# Ablation 2: Remove day3 timepoint
+setting4_ablation_remove_day3:
+  name: "Ablation: Remove day3"
+  description: "Ablation study: remove day3 to assess its marginal contribution"
+  
+  time_points: ["T0", "day2", "day4", "day5"]
+  
+  total_cells: 2500  # Same as Setting2 for fair comparison
+  cells_per_timepoint: null
+  
+  min_cells_required: 200
+  balance_strategy: "total"  # 2500 / 4 = 625 cells per timepoint
+
+# Ablation 3: Remove day4 timepoint
+setting4_ablation_remove_day4:
+  name: "Ablation: Remove day4"
+  description: "Ablation study: remove day4 to assess its marginal contribution"
+  
+  time_points: ["T0", "day2", "day3", "day5"]
+  
+  total_cells: 2500  # Same as Setting2 for fair comparison
+  cells_per_timepoint: null
+  
+  min_cells_required: 200
+  balance_strategy: "total"  # 2500 / 4 = 625 cells per timepoint
+
+# ============================================================================
+# Setting 5: Label Shuffled (for experiment config)
+# ============================================================================
+setting5_label_shuffled:
+  name: "Label Shuffled"
+  description: "Shuffle labels among intermediate timepoints (day2, day3, day4) to test label dependency"
+  
+  time_points: ["T0", "day2", "day3", "day4", "day5"]
+  
+  total_cells: 2500
+  cells_per_timepoint: null
+  
+  min_cells_required: 200
+  balance_strategy: "total"
+  
+  # Label shuffling parameters
+  shuffle_params:
+    boundary_timepoints: ["T0", "day5"]  # Keep original labels
+    intermediate_timepoints: ["day2", "day3", "day4"]  # Shuffle these labels
+
+# ============================================================================
+# Setting 6: Interpolated Data
+# ============================================================================
+setting6_interpolated:
+  name: "Interpolated Intermediate States"
+  description: "Boundary points (T0, day5) are real; intermediate points (day2, day3, day4) are linearly interpolated"
+  
+  time_points: ["T0", "day2", "day3", "day4", "day5"]
+  
+  total_cells: 2500  # 5 timepoints × 500 = 2,500 cells
+  cells_per_timepoint: null
+  
+  min_cells_required: 200
+  balance_strategy: "total"
+  
+  # Interpolation parameters
+  interpolation_params:
+    boundary_timepoints: ["T0", "day5"]  # Real data
+    intermediate_timepoints: ["day2", "day3", "day4"]  # To be interpolated
+    n_samples_per_timepoint: 500
+    time_to_hours:
+      "T0": 0.0
+      "day2": 0.0    # T0 is sampled from day2
+      "day3": 24.0   # 1 day after day2
+      "day4": 48.0   # 2 days after day2
+      "day5": 72.0   # 3 days after day2
+
+# Data validation settings
+validation:
+  check_all_timepoints_present: true  # Ensure both train and test have all time points
+  warn_on_filtered_labels: true  # Warn if any cells are filtered due to unlisted labels
+  check_sufficient_cells: true  # Check min_cells_required for each time point
