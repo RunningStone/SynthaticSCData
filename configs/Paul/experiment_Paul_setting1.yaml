@@ -1,0 +1,157 @@
+# ============================================================================
+# Experiment Configuration: Paul EMT Dataset - Setting 1 (Boundary Only)
+# ============================================================================
+# This file orchestrates the complete experiment by referencing other configs.
+
+# Experiment metadata
+experiment:
+  name: "Paul_EMT_Setting1_Boundary"
+  description: "Train SB, OT, and VAE models on boundary time points (T0, T7) only"
+  version: "1.0"
+  author: "Shi Pan"
+  date: "2024-12-16"
+
+# Configuration file references
+configs:
+  data: "data_Paul_EMT.yaml"
+  models: "models_default.yaml"
+  analyzer: "analyzer_default.yaml"
+
+# Data setting selection
+data_setting: "setting1"  # Use setting1 from data config
+
+# Data sampling override (experiment-specific)
+data_sampling_override:
+  cells_per_timepoint: 150
+  # Setting1: 2 timepoints × 150 = 300 total samples
+  # 
+  # Rationale:
+  # - Smaller dataset (1,974 cells total)
+  # - T7 train has 168 cells, test has 43 cells
+  # - Conservative estimate to ensure balance
+
+# Models to train for this experiment
+models_to_train:
+  - name: "sb"
+    enabled: true
+    override_params:
+      training:
+        epochs: 150
+  
+  - name: "ot"
+    enabled: true
+    override_params: null
+  
+  - name: "vae"
+    enabled: true
+    override_params: null
+
+# Experiment-specific settings
+settings:
+  # Random seed for reproducibility
+  seed: 42
+  
+  # Device configuration
+  device: "cuda"
+  
+  # Multi-GPU settings
+  multi_gpu:
+    enabled: false
+    device_ids: [0, 1]
+    strategy: "ddp"
+  
+  # Number of workers for data loading
+  num_workers: 4
+  
+  # Mixed precision training
+  mixed_precision:
+    enabled: false
+    dtype: "float16"
+  
+  # Output directory
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/Paul_Setting1"
+  
+  # Subdirectories
+  subdirs:
+    checkpoints: "checkpoints"
+    logs: "logs"
+    visualizations: "visualizations"
+    metrics: "metrics"
+    generated_data: "generated_data"
+  
+  # Logging
+  logging:
+    console_level: "INFO"
+    file_level: "DEBUG"
+    log_file: "experiment.log"
+    
+    # Weights & Biases integration
+    wandb:
+      enabled: false
+      project: "SynthaticSCData"
+      entity: null
+      tags: ["Paul", "Setting1", "Boundary"]
+      notes: "Boundary interpolation experiment on Paul EMT dataset"
+    
+    # TensorBoard integration
+    tensorboard:
+      enabled: true
+      log_dir: "tensorboard"
+  
+  # Checkpointing
+  checkpoint:
+    save_frequency: 10
+    keep_last_n: 3
+    save_best: true
+    save_optimizer: true
+    save_scheduler: true
+
+# Evaluation settings for this experiment
+evaluation:
+  eval_during_training: true
+  eval_frequency: 5
+  eval_on_test: true
+  
+  compute_metrics: true
+  generate_visualizations: true
+  save_generated_samples: true
+  
+  n_samples_per_model: 500  # Reduced for smaller dataset
+  
+  # Interpolation settings (specific to Setting 1)
+  interpolation:
+    n_intermediate_points: 50
+    save_trajectory: true
+
+# Post-training analysis
+post_analysis:
+  enabled: true
+  
+  tasks:
+    - name: "model_comparison"
+      description: "Compare all trained models"
+      enabled: true
+    
+    - name: "trajectory_analysis"
+      description: "Analyze generated trajectories"
+      enabled: true
+    
+    - name: "gene_expression_analysis"
+      description: "Analyze gene expression patterns"
+      enabled: true
+    
+    - name: "generate_report"
+      description: "Generate comprehensive HTML report"
+      enabled: true
+
+# Resource limits
+resources:
+  max_memory_gb: 16  # Reduced for smaller dataset
+  max_time_hours: 12
+  
+# Error handling
+error_handling:
+  continue_on_error: false
+  save_on_error: true
+  send_notification: false
+  notification_email: null

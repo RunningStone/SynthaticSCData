@@ -1,0 +1,245 @@
+# ============================================================================
+# Data Configuration: Paul EMT Dataset
+# ============================================================================
+# TGFb-induced EMT in MCF10 breast cancer cell line
+# 8 time points: T0 → T1 → T2 → T3 → T4 → T5 → T6 → T7
+# Total cells: 1,974
+# 
+# Note: This dataset has smaller sample size compared to Cook EMT (~8,974)
+# and GSE234181 (~23,392). Settings are adjusted accordingly.
+
+# Raw data file information
+data_source:
+  file_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/DATAs/Paul/2023_08_09_EMT_Paul_with_batch.h5ad"
+  obs_time_column: "Ground_truth"  # Column name in adata.obs for time labels
+  
+  # Time label order (cells with labels not in this list will be filtered out with warning)
+  # Full EMT trajectory: T0 → T1 → T2 → T3 → T4 → T5 → T6 → T7
+  time_labels_order: ["T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7"]
+  
+  # Time intervals between consecutive time points (in hours)
+  # Assuming equal intervals (adjust if actual experimental design differs)
+  time_intervals:
+    "T0-T1": 24
+    "T1-T2": 24
+    "T2-T3": 24
+    "T3-T4": 24
+    "T4-T5": 24
+    "T5-T6": 24
+    "T6-T7": 24
+  
+  # Feature selection
+  n_hvg: 500  # Number of highly variable genes to select (reduced for smaller dataset)
+
+# Biology-based train/test split
+# Split based on 'batch' column values (pre-assigned in preprocess_add_batch.py)
+# Each timepoint is split 80%/20% into train/test
+biology_split:
+  column_name: "batch"  # Column in adata.obs for split
+  train_values: ["train"]  # Values for training set
+  test_values: ["test"]  # Values for test set
+  train_ratio: 0.8  # Only used if column_name is null (random split)
+
+# ============================================================================
+# Setting 1: Boundary time points only (T0 and T7)
+# ============================================================================
+setting1:
+  name: "Setting1: Boundary Only"
+  description: "Use only boundary time points: T0 (start) and T7 (end)"
+  
+  # Time points to include (must be in time_labels_order)
+  time_points: ["T0", "T7"]
+  
+  # Number of cells per time point
+  # Min cells in test set: T7 has 43 test cells
+  # For training: T0=299, T7=168 -> min=168
+  cells_per_timepoint: 150
+  
+  # Validation: check if sufficient cells exist
+  min_cells_required: 40  # Error if any time point has fewer cells
+  
+  # Balance strategy
+  balance_strategy: "per_timepoint"  # Each time point has cells_per_timepoint samples
+
+# ============================================================================
+# Setting 2: All time points (full trajectory)
+# ============================================================================
+setting2:
+  name: "Setting2: Full Trajectory"
+  description: "Use all 8 time points: T0 → T1 → T2 → T3 → T4 → T5 → T6 → T7"
+  
+  # Time points to include (must be in time_labels_order)
+  time_points: ["T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7"]
+  
+  # Total cells or cells per time point
+  # Total train cells: 1577, divided by 8 timepoints = ~197 per timepoint
+  # Use slightly less to ensure balance
+  total_cells: 1200  # 8 timepoints × 150 = 1,200 cells
+  cells_per_timepoint: null  # If null, use total_cells; if set, use this instead
+  
+  # Validation
+  min_cells_required: 40  # Error if any time point has fewer cells
+  
+  # Balance strategy: "total" or "per_timepoint"
+  balance_strategy: "total"
+
+# ============================================================================
+# Setting 3: Key time points (start + middle + end)
+# ============================================================================
+setting3:
+  name: "Setting3: Key Timepoints"
+  description: "Use key time points: T0 (start), T3/T4 (middle), T7 (end)"
+  
+  # Time points to include (must be in time_labels_order)
+  # T0: baseline state
+  # T4: middle of trajectory (has most cells: 255)
+  # T7: end state
+  time_points: ["T0", "T4", "T7"]
+  
+  # Total cells or cells per time point
+  total_cells: 450  # 3 timepoints × 150 = 450 cells
+  cells_per_timepoint: null  # If null, use total_cells; if set, use this instead
+  
+  # Validation
+  min_cells_required: 40  # Error if any time point has fewer cells
+  
+  # Balance strategy
+  balance_strategy: "total"  # Distribute total_cells evenly across 3 timepoints
+
+# ============================================================================
+# Setting 4: Ablation Studies
+# ============================================================================
+
+# Ablation 1: Remove T1 timepoint
+setting4_ablation_remove_T1:
+  name: "Ablation: Remove T1"
+  description: "Ablation study: remove T1 to assess its marginal contribution"
+  
+  time_points: ["T0", "T2", "T3", "T4", "T5", "T6", "T7"]
+  
+  total_cells: 1050  # 7 timepoints × 150 = 1,050 cells
+  cells_per_timepoint: null
+  
+  min_cells_required: 40
+  balance_strategy: "total"
+
+# Ablation 2: Remove T2 timepoint
+setting4_ablation_remove_T2:
+  name: "Ablation: Remove T2"
+  description: "Ablation study: remove T2 to assess its marginal contribution"
+  
+  time_points: ["T0", "T1", "T3", "T4", "T5", "T6", "T7"]
+  
+  total_cells: 1050  # 7 timepoints × 150 = 1,050 cells
+  cells_per_timepoint: null
+  
+  min_cells_required: 40
+  balance_strategy: "total"
+
+# Ablation 3: Remove T3 timepoint
+setting4_ablation_remove_T3:
+  name: "Ablation: Remove T3"
+  description: "Ablation study: remove T3 to assess its marginal contribution"
+  
+  time_points: ["T0", "T1", "T2", "T4", "T5", "T6", "T7"]
+  
+  total_cells: 1050  # 7 timepoints × 150 = 1,050 cells
+  cells_per_timepoint: null
+  
+  min_cells_required: 40
+  balance_strategy: "total"
+
+# Ablation 4: Remove T4 timepoint
+setting4_ablation_remove_T4:
+  name: "Ablation: Remove T4"
+  description: "Ablation study: remove T4 to assess its marginal contribution"
+  
+  time_points: ["T0", "T1", "T2", "T3", "T5", "T6", "T7"]
+  
+  total_cells: 1050  # 7 timepoints × 150 = 1,050 cells
+  cells_per_timepoint: null
+  
+  min_cells_required: 40
+  balance_strategy: "total"
+
+# Ablation 5: Remove T5 timepoint
+setting4_ablation_remove_T5:
+  name: "Ablation: Remove T5"
+  description: "Ablation study: remove T5 to assess its marginal contribution"
+  
+  time_points: ["T0", "T1", "T2", "T3", "T4", "T6", "T7"]
+  
+  total_cells: 1050  # 7 timepoints × 150 = 1,050 cells
+  cells_per_timepoint: null
+  
+  min_cells_required: 40
+  balance_strategy: "total"
+
+# Ablation 6: Remove T6 timepoint
+setting4_ablation_remove_T6:
+  name: "Ablation: Remove T6"
+  description: "Ablation study: remove T6 to assess its marginal contribution"
+  
+  time_points: ["T0", "T1", "T2", "T3", "T4", "T5", "T7"]
+  
+  total_cells: 1050  # 7 timepoints × 150 = 1,050 cells
+  cells_per_timepoint: null
+  
+  min_cells_required: 40
+  balance_strategy: "total"
+
+# ============================================================================
+# Setting 5: Label Shuffled
+# ============================================================================
+setting5_label_shuffled:
+  name: "Label Shuffled"
+  description: "Shuffle labels among intermediate timepoints (T1-T6) to test label dependency"
+  
+  time_points: ["T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7"]
+  
+  total_cells: 1200
+  cells_per_timepoint: null
+  
+  min_cells_required: 40
+  balance_strategy: "total"
+  
+  # Label shuffling parameters
+  shuffle_params:
+    boundary_timepoints: ["T0", "T7"]  # Keep original labels
+    intermediate_timepoints: ["T1", "T2", "T3", "T4", "T5", "T6"]  # Shuffle these labels
+
+# ============================================================================
+# Setting 6: Interpolated Data
+# ============================================================================
+setting6_interpolated:
+  name: "Interpolated Intermediate States"
+  description: "Boundary points (T0, T7) are real; intermediate points (T1-T6) are linearly interpolated"
+  
+  time_points: ["T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7"]
+  
+  total_cells: 1200  # 8 timepoints × 150 = 1,200 cells
+  cells_per_timepoint: null
+  
+  min_cells_required: 40
+  balance_strategy: "total"
+  
+  # Interpolation parameters
+  interpolation_params:
+    boundary_timepoints: ["T0", "T7"]  # Real data
+    intermediate_timepoints: ["T1", "T2", "T3", "T4", "T5", "T6"]  # To be interpolated
+    n_samples_per_timepoint: 150
+    time_to_hours:
+      "T0": 0.0
+      "T1": 24.0
+      "T2": 48.0
+      "T3": 72.0
+      "T4": 96.0
+      "T5": 120.0
+      "T6": 144.0
+      "T7": 168.0
+
+# Data validation settings
+validation:
+  check_all_timepoints_present: true  # Ensure both train and test have all time points
+  warn_on_filtered_labels: true  # Warn if any cells are filtered due to unlisted labels
+  check_sufficient_cells: true  # Check min_cells_required for each time point

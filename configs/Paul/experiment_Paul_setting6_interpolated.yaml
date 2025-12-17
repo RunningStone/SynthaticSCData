@@ -1,31 +1,27 @@
 # ============================================================================
-# Experiment Configuration: GSE213069 V1 - Setting 6 (Interpolated)
+# Experiment Configuration: Paul EMT Dataset - Setting 6 (Interpolated Data)
 # ============================================================================
-# Interpolation experiment: Generate intermediate timepoints via linear interpolation
-# Boundary timepoints (T0, day5) use real data
-# Intermediate timepoints (day2, day3, day4) are linearly interpolated
-#
-# Purpose: Test whether geometric interpolation can replace real observations
-# Time axis: T0 → day2 → day3 → day4 → day5
+# This experiment trains models on linearly interpolated intermediate states
+# to test whether geometric interpolation can replace real observations
 
+# Experiment metadata
 experiment:
-  name: "GSE213069_V1_Setting6_Interpolated"
-  description: "Train models on boundary (real) + interpolated intermediate time points"
+  name: "Paul_EMT_Setting6_Interpolated"
+  description: "Train models on boundary (real) + interpolated intermediate time points (T1-T6)"
   version: "1.0"
   author: "Shi Pan"
-  date: "2024-12-15"
-  experiment_type: "interpolated"
+  date: "2024-12-16"
 
+# Configuration file references
 configs:
-  data: "data_GSE213069_V1.yaml"
+  data: "data_Paul_EMT.yaml"
   models: "models_default.yaml"
   analyzer: "analyzer_default.yaml"
 
+# Data setting selection
 data_setting: "setting6_interpolated"
 
-data_sampling_override:
-  total_cells: 2500  # 5 timepoints × 500 = 2,500 cells
-
+# Models to train for this experiment
 models_to_train:
   - name: "sb_mlplus"
     enabled: true
@@ -33,28 +29,27 @@ models_to_train:
       training:
         epochs: 200
         batch_size: 64
-        early_stopping_patience: 30
   
   - name: "batch_ot"
     enabled: true
     override_params:
       training:
-        epochs: 200
-        batch_size: 128
+        epochs: 150
+        batch_size: 64
   
   - name: "vae"
     enabled: true
     override_params:
       training:
-        epochs: 200
-        batch_size: 128
+        epochs: 150
+        batch_size: 64
   
   - name: "ot"
     enabled: true
     override_params:
       training:
-        epochs: 150
-        batch_size: 128
+        epochs: 100
+        batch_size: 64
   
   - name: "sb"
     enabled: true
@@ -63,16 +58,23 @@ models_to_train:
         epochs: 150
         batch_size: 64
 
+# Experiment-specific settings
 settings:
   seed: 42
   device: "cuda"
+  
   multi_gpu:
     enabled: false
+    device_ids: [0, 1]
+    strategy: "ddp"
+  
   num_workers: 4
+  
   mixed_precision:
     enabled: false
+    dtype: "float16"
   
-  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/GSE213069_V1/Setting6_Interpolated"
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/Paul_Setting6_Interpolated"
   
   subdirs:
     checkpoints: "checkpoints"
@@ -86,8 +88,14 @@ settings:
     console_level: "INFO"
     file_level: "DEBUG"
     log_file: "experiment.log"
+    
     wandb:
       enabled: false
+      project: "SynthaticSCData"
+      entity: null
+      tags: ["Paul", "Setting6", "Interpolated"]
+      notes: "Testing geometric interpolation vs real intermediate states"
+    
     tensorboard:
       enabled: true
       log_dir: "tensorboard"
@@ -99,48 +107,54 @@ settings:
     save_optimizer: true
     save_scheduler: true
 
+# Evaluation settings
 evaluation:
   eval_during_training: true
   eval_frequency: 5
   eval_on_test: true
+  
   compute_metrics: true
   generate_visualizations: true
   save_generated_samples: true
-  n_samples_per_model: 1000
   
-  # Evaluation endpoints
-  start_timepoint: "T0"
-  end_timepoint: "day5"
+  n_samples_per_model: 500
   
   # Interpolation-specific evaluation
   interpolation_analysis:
     enabled: true
-    compute_iei: true  # Interpolation Effectiveness Index
-    compute_rsi: true  # Residual Structure Index
+    compute_iei: true
+    compute_rsi: true
     per_timepoint_analysis: true
     compare_with_setting1: true
     compare_with_setting2: true
 
+# Post-training analysis
 post_analysis:
   enabled: true
+  
   tasks:
     - name: "interpolation_quality_analysis"
       description: "Analyze quality of interpolated training data"
       enabled: true
+    
     - name: "comparison_with_real_intermediate"
       description: "Compare generated data with real intermediate states"
       enabled: true
+    
     - name: "residual_structure_analysis"
       description: "Analyze structure in interpolation residuals"
       enabled: true
+    
     - name: "generate_report"
       description: "Generate comprehensive HTML report"
       enabled: true
 
+# Resource limits
 resources:
-  max_memory_gb: 32
-  max_time_hours: 48
-
+  max_memory_gb: 16
+  max_time_hours: 24
+  
+# Error handling
 error_handling:
   continue_on_error: false
   save_on_error: true
@@ -150,22 +164,24 @@ error_handling:
 # Experiment 6 specific parameters
 experiment6_params:
   # Interpolation parameters
-  boundary_timepoints: ["T0", "day5"]
-  intermediate_timepoints: ["day2", "day3", "day4"]
-  n_samples_per_timepoint: 500
+  boundary_timepoints: ["T0", "T7"]
+  intermediate_timepoints: ["T1", "T2", "T3", "T4", "T5", "T6"]
+  n_samples_per_timepoint: 150
   
   # Time mapping (for interpolation weights)
-  # T0 is sampled from day2, so we use relative hours from day2
   time_to_hours:
     "T0": 0.0
-    "day2": 0.0    # T0 is sampled from day2
-    "day3": 24.0   # 1 day after day2
-    "day4": 48.0   # 2 days after day2
-    "day5": 72.0   # 3 days after day2
+    "T1": 24.0
+    "T2": 48.0
+    "T3": 72.0
+    "T4": 96.0
+    "T5": 120.0
+    "T6": 144.0
+    "T7": 168.0
   
   # Analysis parameters
   rsi_n_components: 10
   
   # Comparison settings
-  setting1_results_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/GSE213069_V1/Setting1_Boundary"
-  setting2_results_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/GSE213069_V1/Setting2_FullTrajectory"
+  setting1_results_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/Paul_Setting1"
+  setting2_results_path: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/Paul_Setting2"

@@ -1,37 +1,48 @@
 # ============================================================================
-# Experiment Configuration: GSE234181 - Setting 2 (Full Trajectory) - OPTIMIZED
+# Experiment Configuration: GSE234181 - Setting 2 (Full Trajectory)
 # ============================================================================
 # All 4 time points: T0 → T1 → T2 → T3
-# 使用优化后的模型配置
 
 experiment:
-  name: "GSE234181_Setting2_FullTrajectory_Optimized"
-  description: "Train models on all 4 time points with optimized hyperparameters"
-  version: "2.0"
+  name: "GSE234181_Setting2_FullTrajectory"
+  description: "Train models on all 4 time points (full trajectory)"
+  version: "1.0"
   author: "Shi Pan"
-  date: "2024-12-15"
+  date: "2024-11-27"
 
 configs:
   data: "data_GSE234181.yaml"
-  models: "models_default.yaml"  # 使用优化后的模型配置
+  models: "models_default.yaml"
   analyzer: "analyzer_default.yaml"
 
 data_setting: "setting2"
 
 data_sampling_override:
-  total_cells: 8000  # 增加数据量
-  # Setting2: 4 timepoints, ~2000 cells per timepoint
+  total_cells: 4000
+  # Setting2: 4 timepoints, ~1000 cells per timepoint
 
 models_to_train:
   - name: "sb_mlplus"
     enabled: true
-    # 使用models_optimized.yaml中的默认参数
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
+        early_stopping_patience: 30
   
   - name: "batch_ot"
     enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
   
   - name: "vae"
     enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
 
 settings:
   seed: 42
@@ -42,7 +53,7 @@ settings:
   mixed_precision:
     enabled: false
   
-  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/GSE234181/Setting2_Optimized"
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/GSE234181/Setting2_FullTrajectory"
   
   subdirs:
     checkpoints: "checkpoints"
@@ -62,7 +73,7 @@ settings:
       log_dir: "tensorboard"
   
   checkpoint:
-    save_frequency: 20
+    save_frequency: 10
     keep_last_n: 3
     save_best: true
     save_optimizer: true
@@ -70,7 +81,7 @@ settings:
 
 evaluation:
   eval_during_training: true
-  eval_frequency: 10
+  eval_frequency: 5
   eval_on_test: true
   compute_metrics: true
   generate_visualizations: true
@@ -101,7 +112,7 @@ post_analysis:
 
 resources:
   max_memory_gb: 32
-  max_time_hours: 72
+  max_time_hours: 48
 
 error_handling:
   continue_on_error: false

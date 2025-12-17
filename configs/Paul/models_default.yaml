@@ -1,0 +1,211 @@
+# ============================================================================
+# Model Configuration: Architecture and Training Parameters (Paul Dataset)
+# ============================================================================
+# This file defines model architectures and their training hyperparameters.
+# Adjusted for Paul EMT dataset: smaller data (1,974 cells), n_hvg=500
+# Model sizes reduced to prevent overfitting on smaller dataset.
+
+# Optimal Transport Model
+ot:
+  architecture:
+    hidden_dims: [512, 512, 512]  # Reduced for smaller dataset (n_hvg=500, ~1.9K cells)
+    activation: "relu"
+    dropout: 0.15  # Slightly higher dropout for regularization
+    use_residual: true
+    use_batch_norm: false
+  
+  training:
+    epochs: 100
+    batch_size: 128
+    learning_rate: 5.0e-4  # Match old experiment (旧实验使用5e-4)
+    optimizer: "adam"
+    optimizer_kwargs:
+      betas: [0.9, 0.999]
+      eps: 1.0e-8
+      weight_decay: 1.0e-5
+    
+    scheduler:
+      type: "reduce_on_plateau"  # Options: reduce_on_plateau, cosine, step, none
+      patience: 10
+      factor: 0.5
+      min_lr: 1.0e-6
+    
+    early_stopping:
+      enabled: true
+      patience: 30  # Match old experiment
+      min_delta: 1.0e-4
+    
+    gradient_clipping:
+      enabled: true
+      max_norm: 5.0  # Match old experiment
+
+# Schrödinger Bridge Model
+sb:
+  architecture:
+    hidden_dims: [512, 512, 512, 512]  # Reduced for smaller dataset
+    time_embedding_dim: 64
+    activation: "relu"
+    dropout: 0.15  # Slightly higher dropout for regularization
+    diffusion_coeff: 0.1
+    use_residual: true
+  
+  training:
+    epochs: 200
+    batch_size: 64
+    learning_rate: 5.0e-4  # Match old experiment
+    optimizer: "adam"
+    optimizer_kwargs:
+      betas: [0.9, 0.999]
+      eps: 1.0e-8
+      weight_decay: 1.0e-5
+    
+    scheduler:
+      type: "cosine"
+      T_max: 200
+      eta_min: 1.0e-6
+    
+    early_stopping:
+      enabled: true
+      patience: 30
+      min_delta: 1.0e-4
+    
+    gradient_clipping:
+      enabled: true
+      max_norm: 5.0  # Match old experiment
+
+# MLPlus Schrödinger Bridge Model (for Setting 2)
+sb_mlplus:
+  architecture:
+    hidden_dim: 256  # Reduced from 512 for smaller dataset
+    n_blocks: 6  # Reduced from 8 for smaller dataset
+    time_embedding_dim: 64
+    n_time_frequencies: 10
+    activation: "relu"
+    dropout: 0.15  # Slightly higher dropout for regularization
+    diffusion_coeff: 0.1
+    use_residual: true
+  
+  training:
+    epochs: 200  # Reduced epochs for smaller dataset
+    batch_size: 64  # Smaller batch size for smaller dataset
+    learning_rate: 1.0e-4  # Adjusted learning rate
+    optimizer: "adam"
+    optimizer_kwargs:
+      betas: [0.9, 0.999]
+      eps: 1.0e-8
+      weight_decay: 5.0e-6
+    
+    scheduler:
+      type: "cosine"
+      T_max: 200  # Match epochs
+      eta_min: 1.0e-6
+    
+    early_stopping:
+      enabled: true
+      patience: 80  # 从50增加到80，给模型更多时间稳定
+      min_delta: 5.0e-4  # 从1e-4增加到5e-4，容忍更大的loss波动
+    
+    gradient_clipping:
+      enabled: true
+      max_norm: 5.0  # Match old experiment
+
+# Batch Optimal Transport Model (for Setting 2)
+# Note: Contains 7 separate OT models (one per time transition)
+# Reduced hidden_dims to balance total parameter count
+batch_ot:
+  architecture:
+    hidden_dims: [256, 256, 256]  # Reduced for smaller dataset (7 models for 8 timepoints)
+    activation: "relu"
+    dropout: 0.15  # Slightly higher dropout for regularization
+    use_residual: true
+  
+  training:
+    epochs: 100
+    batch_size: 128
+    learning_rate: 5.0e-4
+    optimizer: "adam"
+    optimizer_kwargs:
+      betas: [0.9, 0.999]
+      eps: 1.0e-8
+      weight_decay: 1.0e-5
+    
+    scheduler:
+      type: "reduce_on_plateau"
+      patience: 10
+      factor: 0.5
+      min_lr: 1.0e-6
+    
+    early_stopping:
+      enabled: true
+      patience: 30
+      min_delta: 1.0e-4
+    
+    gradient_clipping:
+      enabled: true
+      max_norm: 5.0
+
+# Conditional VAE Model
+vae:
+  architecture:
+    hidden_dims: [512, 256, 128]  # Reduced for smaller dataset (n_hvg=500)
+    latent_dim: 64            # Reduced latent space dimension
+    activation: "relu"        # Activation function
+    dropout: 0.15             # Slightly higher dropout for regularization
+    beta: 1.0                 # KL divergence weight (β-VAE)
+    use_batch_norm: false
+    # ConditionalVAE specific parameters
+    time_embedding_dim: 64    # Time embedding dimension
+    mmd_weight: 1.0           # MMD loss weight for distribution matching
+    mmd_kernel: "rbf"         # MMD kernel type (rbf, linear, polynomial)
+    mmd_bandwidth: 1.0        # MMD kernel bandwidth
+  
+  training:
+    epochs: 150
+    batch_size: 128
+    learning_rate: 1.0e-3
+    optimizer: "adam"
+    optimizer_kwargs:
+      betas: [0.9, 0.999]
+      eps: 1.0e-8
+      weight_decay: 1.0e-5
+    
+    scheduler:
+      type: "reduce_on_plateau"
+      patience: 10
+      factor: 0.5
+      min_lr: 1.0e-6
+    
+    early_stopping:
+      enabled: true
+      patience: 20
+      min_delta: 1.0e-4
+    
+    gradient_clipping:
+      enabled: true
+      max_norm: 5.0  # Match old experiment
+    
+    # VAE-specific training parameters
+    kl_annealing:
+      enabled: true
+      start_epoch: 0
+      end_epoch: 50
+      start_weight: 0.0
+      end_weight: 1.0
+
+# General training settings (applied to all models if not overridden)
+general:
+  checkpoint:
+    save_best: true
+    save_last: true
+    save_frequency: 10  # Save every N epochs
+    monitor_metric: "val_loss"  # Metric to monitor for best model
+    mode: "min"  # min or max
+  
+  logging:
+    log_frequency: 10  # Log every N batches
+    log_gradients: false
+    log_weights: false
+  
+  reproducibility:
+    deterministic: false  # Set to true for reproducible results (may be slower)
+    benchmark: true  # Set to true for faster training (may be non-deterministic)

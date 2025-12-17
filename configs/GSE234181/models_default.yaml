@@ -1,61 +1,139 @@
 # ============================================================================
-# Model Configuration: Architecture and Training Parameters
+# Model Configuration: Optimized for GSE234181 Dataset
 # ============================================================================
-# This file defines model architectures and their training hyperparameters.
+# GSE234181特点：
+# - 1000维HVG特征
+# - 4个时间点 (T0 → T1 → T2 → T3)
+# - 约23,000个细胞
+# - 时间点之间的分布重叠较大
+#
+# 优化策略：
+# 1. 降低模型复杂度，避免过拟合
+# 2. 增加正则化
+# 3. 使用更保守的学习率
+# 4. 增加早停patience
 
-# Optimal Transport Model
+# Optimal Transport Model (Setting1用)
 ot:
   architecture:
-    hidden_dims: [1536, 1536, 1536, 1536]  # ~7.8M params, closer to SB MLPlus (~9.8M) old [512 512 512 512]
+    hidden_dims: [1024, 1024, 1024]  # 减少层数和宽度
     activation: "relu"
-    dropout: 0.1
+    dropout: 0.2  # 增加dropout
     use_residual: true
     use_batch_norm: false
   
   training:
-    epochs: 100
-    batch_size: 128
-    learning_rate: 5.0e-4  # Match old experiment (旧实验使用5e-4)
-    optimizer: "adam"
+    epochs: 200
+    batch_size: 256  # 增大batch size提高稳定性
+    learning_rate: 1.0e-4  # 降低学习率
+    optimizer: "adamw"  # 使用AdamW
     optimizer_kwargs:
       betas: [0.9, 0.999]
       eps: 1.0e-8
-      weight_decay: 1.0e-5
+      weight_decay: 1.0e-4  # 增加weight decay
     
     scheduler:
-      type: "reduce_on_plateau"  # Options: reduce_on_plateau, cosine, step, none
-      patience: 10
-      factor: 0.5
-      min_lr: 1.0e-6
+      type: "cosine"  # 使用cosine调度
+      T_max: 200
+      eta_min: 1.0e-6
     
     early_stopping:
       enabled: true
-      patience: 30  # Match old experiment
-      min_delta: 1.0e-4
+      patience: 50  # 增加patience
+      min_delta: 1.0e-5
     
     gradient_clipping:
       enabled: true
-      max_norm: 5.0  # Match old experiment
+      max_norm: 1.0  # 更严格的梯度裁剪
 
-# Schrödinger Bridge Model
+# Schrödinger Bridge Model (Setting1用)
 sb:
   architecture:
-    hidden_dims: [1024, 1024, 1024, 1024, 1024]  # ~8.5M params, closer to SB MLPlus (~9.8M) old [512,512,512,512]
+    hidden_dims: [512, 512, 512, 512]  # 减小网络
     time_embedding_dim: 64
     activation: "relu"
-    dropout: 0.1
+    dropout: 0.2  # 增加dropout
     diffusion_coeff: 0.1
     use_residual: true
   
   training:
-    epochs: 200
-    batch_size: 64
-    learning_rate: 5.0e-4  # Match old experiment
-    optimizer: "adam"
+    epochs: 300
+    batch_size: 256
+    learning_rate: 1.0e-4  # 降低学习率
+    optimizer: "adamw"
     optimizer_kwargs:
       betas: [0.9, 0.999]
       eps: 1.0e-8
-      weight_decay: 1.0e-5
+      weight_decay: 1.0e-4
+    
+    scheduler:
+      type: "cosine"
+      T_max: 300
+      eta_min: 1.0e-6
+    
+    early_stopping:
+      enabled: true
+      patience: 50
+      min_delta: 1.0e-5
+    
+    gradient_clipping:
+      enabled: true
+      max_norm: 1.0
+
+# MLPlus Schrödinger Bridge Model (Setting2/3用)
+# 关键优化：这个模型之前完全没有收敛
+sb_mlplus:
+  architecture:
+    hidden_dim: 256  # 从512降到256
+    n_blocks: 4  # 从8降到4
+    time_embedding_dim: 32  # 从64降到32
+    n_time_frequencies: 5  # 从10降到5
+    activation: "relu"
+    dropout: 0.3  # 增加dropout到0.3
+    diffusion_coeff: 0.1
+    use_residual: true
+  
+  training:
+    epochs: 500  # 增加epochs
+    batch_size: 256  # 增大batch size
+    learning_rate: 1.0e-4  # 从3e-5提高到1e-4
+    optimizer: "adamw"
+    optimizer_kwargs:
+      betas: [0.9, 0.999]
+      eps: 1.0e-8
+      weight_decay: 1.0e-4  # 增加正则化
+    
+    scheduler:
+      type: "cosine"
+      T_max: 500
+      eta_min: 1.0e-6
+    
+    early_stopping:
+      enabled: true
+      patience: 100  # 增加patience，给模型更多时间
+      min_delta: 1.0e-5
+    
+    gradient_clipping:
+      enabled: true
+      max_norm: 1.0  # 更严格的梯度裁剪
+
+# Batch Optimal Transport Model (Setting2/3用)
+batch_ot:
+  architecture:
+    hidden_dims: [512, 512]  # 进一步简化
+    activation: "relu"
+    dropout: 0.2
+    use_residual: true
+  
+  training:
+    epochs: 200
+    batch_size: 256
+    learning_rate: 1.0e-4
+    optimizer: "adamw"
+    optimizer_kwargs:
+      betas: [0.9, 0.999]
+      eps: 1.0e-8
+      weight_decay: 1.0e-4
     
     scheduler:
       type: "cosine"
@@ -64,147 +142,74 @@ sb:
     
     early_stopping:
       enabled: true
-      patience: 30
-      min_delta: 1.0e-4
+      patience: 50
+      min_delta: 1.0e-5
     
     gradient_clipping:
       enabled: true
-      max_norm: 5.0  # Match old experiment
+      max_norm: 1.0
 
-# MLPlus Schrödinger Bridge Model (for Setting 2)
-sb_mlplus:
+# Conditional VAE Model
+# 关键优化：之前严重过拟合
+vae:
   architecture:
-    hidden_dim: 512
-    n_blocks: 8
-    time_embedding_dim: 64
-    n_time_frequencies: 10
+    hidden_dims: [512, 256]  # 大幅简化
+    latent_dim: 64  # 从128降到64
     activation: "relu"
-    dropout: 0.1
-    diffusion_coeff: 0.1
-    use_residual: true
+    dropout: 0.3  # 增加dropout
+    beta: 0.5  # 降低KL权重，减少后验崩溃
+    use_batch_norm: true  # 启用batch norm
+    time_embedding_dim: 32
+    mmd_weight: 0.5  # 降低MMD权重
+    mmd_kernel: "rbf"
+    mmd_bandwidth: 1.0
   
   training:
-    epochs: 300  # 增加到300，因为数据量翻倍
-    batch_size: 128  # 从64增加到128，加速训练
-    learning_rate: 3.0e-5  # 从1e-5提高到3e-5，加快收敛
-    optimizer: "adam"
+    epochs: 300
+    batch_size: 256
+    learning_rate: 5.0e-4  # 降低学习率
+    optimizer: "adamw"
     optimizer_kwargs:
       betas: [0.9, 0.999]
       eps: 1.0e-8
-      weight_decay: 5.0e-6
+      weight_decay: 1.0e-4
     
     scheduler:
       type: "cosine"
-      T_max: 300  # 匹配新的epochs
+      T_max: 300
       eta_min: 1.0e-6
     
     early_stopping:
       enabled: true
-      patience: 80  # 从50增加到80，给模型更多时间稳定
-      min_delta: 5.0e-4  # 从1e-4增加到5e-4，容忍更大的loss波动
+      patience: 50
+      min_delta: 1.0e-5
     
     gradient_clipping:
       enabled: true
-      max_norm: 5.0  # Match old experiment
-
-# Batch Optimal Transport Model (for Setting 2)
-# Note: Contains 7 separate OT models (one per time transition)
-# Reduced hidden_dims to balance total parameter count
-batch_ot:
-  architecture:
-    hidden_dims: [512, 512, 512]  # Reduced from [1536, 1536, 1536, 1536]
-    # Rationale: 7 models × ~1.5M params/model ≈ 10.5M total (comparable to other models)
-    activation: "relu"
-    dropout: 0.1
-    use_residual: true
-  
-  training:
-    epochs: 100
-    batch_size: 128
-    learning_rate: 5.0e-4
-    optimizer: "adam"
-    optimizer_kwargs:
-      betas: [0.9, 0.999]
-      eps: 1.0e-8
-      weight_decay: 1.0e-5
+      max_norm: 1.0
     
-    scheduler:
-      type: "reduce_on_plateau"
-      patience: 10
-      factor: 0.5
-      min_lr: 1.0e-6
-    
-    early_stopping:
-      enabled: true
-      patience: 30
-      min_delta: 1.0e-4
-    
-    gradient_clipping:
-      enabled: true
-      max_norm: 5.0
-
-# Conditional VAE Model
-vae:
-  architecture:
-    hidden_dims: [1536, 768, 256]  # ~9.3M params, closer to SB MLPlus (~9.8M) old [512,256]
-    latent_dim: 128           # Latent space dimension
-    activation: "relu"        # Activation function
-    dropout: 0.1              # Dropout probability
-    beta: 1.0                 # KL divergence weight (β-VAE)
-    use_batch_norm: false
-    # ConditionalVAE specific parameters
-    time_embedding_dim: 64    # Time embedding dimension
-    mmd_weight: 1.0           # MMD loss weight for distribution matching
-    mmd_kernel: "rbf"         # MMD kernel type (rbf, linear, polynomial)
-    mmd_bandwidth: 1.0        # MMD kernel bandwidth
-  
-  training:
-    epochs: 150
-    batch_size: 128
-    learning_rate: 1.0e-3
-    optimizer: "adam"
-    optimizer_kwargs:
-      betas: [0.9, 0.999]
-      eps: 1.0e-8
-      weight_decay: 1.0e-5
-    
-    scheduler:
-      type: "reduce_on_plateau"
-      patience: 10
-      factor: 0.5
-      min_lr: 1.0e-6
-    
-    early_stopping:
-      enabled: true
-      patience: 20
-      min_delta: 1.0e-4
-    
-    gradient_clipping:
-      enabled: true
-      max_norm: 5.0  # Match old experiment
-    
-    # VAE-specific training parameters
+    # VAE-specific: 更慢的KL退火
     kl_annealing:
       enabled: true
       start_epoch: 0
-      end_epoch: 50
+      end_epoch: 100  # 从50增加到100
       start_weight: 0.0
-      end_weight: 1.0
+      end_weight: 0.5  # 降低最终KL权重
 
-# General training settings (applied to all models if not overridden)
+# General training settings
 general:
   checkpoint:
     save_best: true
     save_last: true
-    save_frequency: 10  # Save every N epochs
-    monitor_metric: "val_loss"  # Metric to monitor for best model
-    mode: "min"  # min or max
+    save_frequency: 20
+    monitor_metric: "val_loss"
+    mode: "min"
   
   logging:
-    log_frequency: 10  # Log every N batches
+    log_frequency: 10
     log_gradients: false
     log_weights: false
   
   reproducibility:
-    deterministic: false  # Set to true for reproducible results (may be slower)
-    benchmark: true  # Set to true for faster training (may be non-deterministic)
+    deterministic: false
+    benchmark: true

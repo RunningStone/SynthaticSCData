@@ -1,0 +1,153 @@
+# ============================================================================
+# Experiment Configuration: Paul EMT Dataset - Setting 2 (All Time Points)
+# ============================================================================
+# This file orchestrates the complete experiment by referencing other configs.
+
+# Experiment metadata
+experiment:
+  name: "Paul_EMT_Setting2_AllTimepoints"
+  description: "Train models on all 8 time points (T0→T1→T2→T3→T4→T5→T6→T7) - MLPlus SB, Batch OT, and CVAE"
+  version: "1.0"
+  author: "Shi Pan"
+  date: "2024-12-16"
+
+# Configuration file references
+configs:
+  data: "data_Paul_EMT.yaml"
+  models: "models_default.yaml"
+  analyzer: "analyzer_default.yaml"
+
+# Data setting selection
+data_setting: "setting2"  # Use setting2 from data config
+
+# Data sampling override (experiment-specific)
+data_sampling_override:
+  total_cells: 1200  # 8 timepoints × 150 = 1,200 cells
+  # 
+  # Rationale:
+  # - Smaller dataset (1,974 cells total, 1,577 train)
+  # - 150 cells per timepoint ensures balance
+  # - Fair comparison with Setting1 and Setting3
+
+# Models to train for this experiment
+models_to_train:
+  - name: "sb_mlplus"
+    enabled: true
+    override_params:
+      training:
+        epochs: 200
+        batch_size: 64
+  
+  - name: "batch_ot"
+    enabled: true
+    override_params:
+      training:
+        epochs: 150
+        batch_size: 64
+  
+  - name: "vae"
+    enabled: true
+    override_params:
+      training:
+        epochs: 150
+        batch_size: 64
+
+# Experiment-specific settings
+settings:
+  seed: 42
+  device: "cuda"
+  
+  multi_gpu:
+    enabled: false
+    device_ids: [0, 1]
+    strategy: "ddp"
+  
+  num_workers: 4
+  
+  mixed_precision:
+    enabled: false
+    dtype: "float16"
+  
+  # Output directory
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/Paul_Setting2"
+  
+  subdirs:
+    checkpoints: "checkpoints"
+    logs: "logs"
+    visualizations: "visualizations"
+    metrics: "metrics"
+    generated_data: "generated_data"
+  
+  logging:
+    console_level: "INFO"
+    file_level: "DEBUG"
+    log_file: "experiment.log"
+    
+    wandb:
+      enabled: false
+      project: "SynthaticSCData"
+      entity: null
+      tags: ["Paul", "Setting2", "AllTimepoints"]
+      notes: "Full trajectory learning experiment on Paul EMT dataset"
+    
+    tensorboard:
+      enabled: true
+      log_dir: "tensorboard"
+  
+  checkpoint:
+    save_frequency: 10
+    keep_last_n: 3
+    save_best: true
+    save_optimizer: true
+    save_scheduler: true
+
+# Evaluation settings for this experiment
+evaluation:
+  eval_during_training: true
+  eval_frequency: 5
+  eval_on_test: true
+  
+  compute_metrics: true
+  generate_visualizations: true
+  save_generated_samples: true
+  
+  n_samples_per_model: 500  # Reduced for smaller dataset
+  
+  # Trajectory settings (specific to Setting 2)
+  trajectory:
+    n_intermediate_points: 20
+    save_full_trajectory: true
+    analyze_per_segment: true
+
+# Post-training analysis
+post_analysis:
+  enabled: true
+  
+  tasks:
+    - name: "trajectory_analysis"
+      description: "Analyze full trajectories across all 8 time points"
+      enabled: true
+    
+    - name: "temporal_consistency"
+      description: "Check temporal consistency of generated trajectories"
+      enabled: true
+    
+    - name: "gene_expression_dynamics"
+      description: "Analyze gene expression dynamics over time"
+      enabled: true
+    
+    - name: "generate_report"
+      description: "Generate comprehensive HTML report"
+      enabled: true
+
+# Resource limits
+resources:
+  max_memory_gb: 16
+  max_time_hours: 24
+  
+# Error handling
+error_handling:
+  continue_on_error: false
+  save_on_error: true
+  send_notification: false
+  notification_email: null

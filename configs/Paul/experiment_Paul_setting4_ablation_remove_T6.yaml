@@ -1,27 +1,32 @@
 # ============================================================================
-# Experiment Configuration: GSE234181 - Ablation Study (Remove T1)
+# Experiment Configuration: Paul EMT - Ablation Study (Remove T6)
 # ============================================================================
-# Ablation: Remove T1 timepoint to assess its marginal contribution
+# Experiment 4: Systematic ablation to quantify marginal contribution of T6 timepoint
 
+# Experiment metadata
 experiment:
-  name: "GSE234181_Setting4_Ablation_RemoveT1"
-  description: "Ablation study: remove T1 timepoint to assess its marginal contribution"
+  name: "Paul_EMT_Setting4_Ablation_RemoveT6"
+  description: "Ablation study: remove T6 timepoint to assess its marginal contribution"
   version: "1.0"
   author: "Shi Pan"
-  date: "2024-11-27"
-  parent_experiment: "GSE234181_Setting2"
-  ablation_target: "T1"
+  date: "2024-12-16"
+  parent_experiment: "Paul_EMT_Setting2"
+  ablation_target: "T6"
 
+# Configuration file references
 configs:
-  data: "data_GSE234181.yaml"
+  data: "data_Paul_EMT.yaml"
   models: "models_default.yaml"
   analyzer: "analyzer_default.yaml"
 
-data_setting: "setting4_ablation_remove_T1"
+# Data setting selection
+data_setting: "setting4_ablation_remove_T6"
 
+# Data sampling override
 data_sampling_override:
-  total_cells: 4000
+  total_cells: 1050  # 7 timepoints × 150 = 1,050 cells
 
+# Models to train (only sb_mlplus to save computation)
 models_to_train:
   - name: "sb_mlplus"
     enabled: true
@@ -29,8 +34,8 @@ models_to_train:
       training:
         epochs: 200
         batch_size: 64
-        early_stopping_patience: 30
 
+# Experiment-specific settings
 settings:
   seed: 42
   device: "cuda"
@@ -40,7 +45,7 @@ settings:
   mixed_precision:
     enabled: false
   
-  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/GSE234181/Setting4_Ablation_RemoveT1"
+  output_dir: "/home/pan/Experiments/EXPs/2025_10_VCC_Exps/OUTPUTs/SynthaticSCData/Paul_Setting4_Ablation_RemoveT6"
   
   subdirs:
     checkpoints: "checkpoints"
@@ -66,6 +71,7 @@ settings:
     save_optimizer: true
     save_scheduler: true
 
+# Evaluation settings
 evaluation:
   eval_during_training: true
   eval_frequency: 5
@@ -73,30 +79,33 @@ evaluation:
   compute_metrics: true
   generate_visualizations: true
   save_generated_samples: true
-  n_samples_per_model: 1000
+  n_samples_per_model: 500
   
   start_timepoint: "T0"
-  end_timepoint: "T3"
+  end_timepoint: "T7"
   
   trajectory:
     n_intermediate_points: 20
     save_full_trajectory: true
     analyze_per_segment: true
 
+# Post-training analysis
 post_analysis:
   enabled: true
   tasks:
     - name: "ablation_impact_analysis"
-      description: "Analyze the impact of removing T1 timepoint"
+      description: "Analyze the impact of removing T6 timepoint"
       enabled: true
     - name: "generate_report"
       description: "Generate ablation study report"
       enabled: true
 
+# Resource limits
 resources:
-  max_memory_gb: 32
-  max_time_hours: 24
+  max_memory_gb: 16
+  max_time_hours: 12
 
+# Error handling
 error_handling:
   continue_on_error: false
   save_on_error: true
